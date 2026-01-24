@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Избранные авторы - JOPDS</title>
+    <link rel="icon" th:href="@{/favicon.ico}" type="image/x-icon">
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-left">
+                <h1>JOPDS - Каталог книг</h1>
+                <div class="header-stats">
+                    <a th:href="@{/}" style="color: #667eea; text-decoration: none;">← На главную</a>
+                </div>
+            </div>
+            <div class="user-info">
+                <span sec:authentication="name"></span>
+                <a th:href="@{/settings}" class="btn btn-link" title="Настройки">
+                    <span style="font-size: 18px;">⚙️</span>
+                </a>
+                <a th:if="${isAdmin}" th:href="@{/admin}" class="btn btn-link">Администрирование</a>
+                <form th:action="@{/logout}" method="post" style="display: inline;">
+                    <button type="submit" class="btn btn-link">Выйти</button>
+                </form>
+            </div>
+        </header>
+        
+        <main class="main-content">
+            <div class="authors-section">
+                <h2 style="margin-bottom: 20px;">Избранные авторы</h2>
+                
+                <div th:if="${favoriteAuthors != null and !favoriteAuthors.isEmpty()}" class="authors-list">
+                    <div class="authors-list-container-single">
+                        <div th:each="favoriteAuthor : ${favoriteAuthors}" class="author-item" style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                            <div style="flex: 1;">
+                                <a th:if="${favoriteAuthor.bookAuthorId != null}"
+                                   th:href="@{/(authorId=${favoriteAuthor.bookAuthorId})}"
+                                   class="author-link"
+                                   th:text="${favoriteAuthor.fullName != null ? favoriteAuthor.fullName : 'Автор'}">
+                                    Имя автора
+                                </a>
+                                <span th:if="${favoriteAuthor.bookAuthorId == null}"
+                                      class="author-name"
+                                      th:text="${favoriteAuthor.fullName != null ? favoriteAuthor.fullName : 'Автор'}">
+                                    Имя автора
+                                </span>
+                            </div>
+                            <div th:if="${favoriteAuthor.bookAuthorId != null}">
+                                <button th:data-author-id="${favoriteAuthor.bookAuthorId}"
+                                        class="btn-favorite btn-favorite-remove"
+                                        title="Удалить из избранного"
+                                        aria-label="Удалить из избранного"
+                                        onclick="removeFromFavorites(this)">
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div th:if="${favoriteAuthors == null or favoriteAuthors.isEmpty()}" class="no-results">
+                    <p>У вас пока нет избранных авторов</p>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script>
+        function removeFromFavorites(button) {
+            const authorId = button.getAttribute('data-author-id');
+            
+            fetch('/api/favorite-authors/toggle-by-id', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    bookAuthorId: parseInt(authorId),
+                    fullName: '' // Не важно для удаления
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Удаляем элемент из списка
+                button.closest('.author-item').remove();
+                
+                // Проверяем, остались ли еще авторы
+                const authorsList = document.querySelector('.authors-list-container-single');
+                if (authorsList && authorsList.children.length === 0) {
+                    location.reload(); // Перезагружаем страницу, чтобы показать сообщение "нет избранных авторов"
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка при удалении из избранного:', error);
+            });
+        }
+    </script>
+</body>
+</html>

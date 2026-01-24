@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: jopds
+
+server:
+  port: ${SERVER_PORT:8080}
+
+  # Конфигурация подключения к MySQL БД
+  datasource:    
+    url: ${DATASOURCE_URL:jdbc:mysql://localhost:3306/jopds?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true}    
+    username: ${DATASOURCE_USERNAME:root}
+    password: ${DATASOURCE_PASSWORD:root}
+  
+  # Конфигурация JPA
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect        
+        format_sql: true
+        jdbc:
+          batch_size: 5000
+          batch_versioned_data: true
+        order_inserts: true
+        order_updates: true
+
+  # Конфигурация Flyway
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+
+# Конфигурация для INPX сервиса
+inpx:
+  # Полный путь к INPX файлу (задается через переменную окружения INPX_FILE_PATH)
+  filePath: ${INPX_FILE_PATH:}
+  # Примеры:
+  # INPX_FILE_PATH=C:/Книги/fb2/fb2_local.inpx
+  # INPX_FILE_PATH=/home/user/library.inpx
+  # INPX_FILE_PATH=./inpx/library.inpx
+  
+  # Имя INPX файла (опционально, если не указано, берется первый найденный)
+  # fileName: library.inpx
+  
+  # Путь к директории с архивами книг (ZIP файлы с книгами)
+  # Используется для скачивания книг из архивов
+  # Задается через переменную окружения INPX_BOOK_DIRECTORY
+  bookDirectory: ${INPX_BOOK_DIRECTORY:}
+  # Примеры:
+  # INPX_BOOK_DIRECTORY=C:/Книги/fb2/
+  # INPX_BOOK_DIRECTORY=/home/user/books
+  # INPX_BOOK_DIRECTORY=./books
+
+# Конфигурация для пользователя admin по умолчанию
+admin:
+  # Пароль пользователя admin по умолчанию (используется при первой инициализации БД)
+  # Задается через переменную окружения ADMIN_DEFAULT_PASSWORD
+  default-password: ${ADMIN_DEFAULT_PASSWORD:admin}

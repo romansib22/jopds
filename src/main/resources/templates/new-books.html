@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Новинки избранных авторов - JOPDS</title>
+    <link rel="icon" th:href="@{/favicon.ico}" type="image/x-icon">
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-left">
+                <h1>JOPDS - Каталог книг</h1>
+                <div class="header-stats">
+                    <a th:href="@{/}" style="color: #667eea; text-decoration: none;">← На главную</a>
+                </div>
+            </div>
+            <div class="user-info">
+                <span sec:authentication="name"></span>
+                <a th:href="@{/settings}" class="btn btn-link" title="Настройки">
+                    <span style="font-size: 18px;">⚙️</span>
+                </a>
+                <a th:if="${isAdmin}" th:href="@{/admin}" class="btn btn-link">Администрирование</a>
+                <form th:action="@{/logout}" method="post" style="display: inline;">
+                    <button type="submit" class="btn btn-link">Выйти</button>
+                </form>
+            </div>
+        </header>
+        
+        <main class="main-content">
+            <div class="authors-section">
+                <h2 style="margin-bottom: 20px;">Новинки избранных авторов</h2>
+                
+                <!-- Форма поиска по дате -->
+                <div style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); margin-bottom: 20px;">
+                    <form th:action="@{/new-books}" method="get" style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+                        <div style="display: flex; flex-direction: column; gap: 5px;">
+                            <label for="date" style="font-weight: 500; color: #666;">Дата (от):</label>
+                            <input 
+                                type="date" 
+                                id="date" 
+                                name="date" 
+                                th:value="${searchDateStr}"
+                                required
+                                style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; min-width: 180px;">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Поиск</button>
+                    </form>
+                </div>
+                
+                <!-- Результаты поиска -->
+                <div th:if="${searchResults != null and !searchResults.isEmpty()}" class="books-list">
+                    <div style="margin-bottom: 15px; color: #666;">
+                        <p>Найдено книг: <strong th:text="${searchResults.size()}">0</strong></p>
+                        <p style="font-size: 13px; color: #888; margin-top: 5px;">
+                            Показаны книги избранных авторов с датой добавления >= 
+                            <strong th:text="${#temporals.format(searchDate, 'dd.MM.yyyy')}">01.01.2024</strong>
+                        </p>
+                    </div>
+                    <div th:each="book, bookIterStat : ${searchResults}" class="book-card">
+                        <div class="book-header">
+                            <h3 class="book-title" th:text="${book.title}">Название</h3>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <span th:if="${book.fileSize != null}" 
+                                      class="book-file-size" 
+                                      th:data-size="${book.fileSize}"
+                                      style="color: #666; font-size: 14px; white-space: nowrap;">
+                                    <span class="formatted-size"></span> КБ
+                                </span>
+                                <a th:if="${book.format != null and !book.format.isEmpty() and book.id != null}" 
+                                   th:href="@{/api/books/download(bookId=${book.id})}"
+                                   class="btn-download"
+                                   th:text="${book.format.toUpperCase()}">
+                                    FB2
+                                </a>
+                                <a th:if="${book.format != null and book.format.equalsIgnoreCase('fb2') and book.id != null}" 
+                                   th:href="@{/api/books/download-zip(bookId=${book.id})}"
+                                   class="btn-download"
+                                   style="background-color: #28a745;"
+                                   title="Скачать сжатый файл (.fb2.zip)">
+                                    FB2.ZIP
+                                </a>
+                            </div>
+                        </div>
+                        <div class="book-details">
+                            <div class="book-detail-row">
+                                <span class="book-label">Автор:</span>
+                                <span class="book-value">
+                                    <!-- Используем bookAuthorsMap, если он есть и содержит авторов -->
+                                    <span th:if="${bookAuthorsMap != null and bookAuthorsMap.containsKey(bookIterStat.index) and !bookAuthorsMap[bookIterStat.index].isEmpty()}">
+                                        <span th:each="authorInfo, authorIterStat : ${bookAuthorsMap[bookIterStat.index]}">
+                                            <a th:if="${authorInfo['authorId'] != null}" 
+                                               th:href="@{/(authorId=${authorInfo['authorId']})}"
+                                               class="author-link"
+                                               th:text="${authorInfo['name']}">Автор</a>
+                                            <span th:if="${authorInfo['authorId'] == null}" 
+                                                  class="author-name-display"
+                                                  th:text="${authorInfo['name']}">Автор</span>
+                                            <span th:if="${!authorIterStat.last}">, </span>
+                                        </span>
+                                    </span>
+                                    <!-- Fallback: используем book.authors или book.authorsString -->
+                                    <span th:if="${bookAuthorsMap == null or !bookAuthorsMap.containsKey(bookIterStat.index) or bookAuthorsMap[bookIterStat.index].isEmpty()}">
+                                        <!-- Используем список авторов из book.authors -->
+                                        <span th:if="${book.authors != null and !book.authors.isEmpty()}">
+                                            <span th:each="author, authorIterStat : ${book.authors}">
+                                                <a th:if="${author.authorId != null}"
+                                                   th:href="@{/(authorId=${author.authorId})}"
+                                                   class="author-link"
+                                                   th:text="${author.fullName}">Автор</a>
+                                                <span th:if="${author.authorId == null}"
+                                                      class="author-name-display"
+                                                      th:text="${author.fullName}">Автор</span>
+                                                <span th:if="${!authorIterStat.last}">, </span>
+                                            </span>
+                                        </span>
+                                        <!-- Используем authorsString, если список авторов пустой -->
+                                        <span th:if="${(book.authors == null or book.authors.isEmpty()) and book.authorsString != null and !book.authorsString.isEmpty()}" 
+                                              class="author-name-display"
+                                              th:text="${book.authorsString}">Автор</span>
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="book-detail-row" th:if="${book.series != null and !book.series.isEmpty()}">
+                                <span class="book-label">Серия:</span>
+                                <span class="book-value">
+                                    <!-- Получаем первый authorId из bookAuthorsMap для формирования ссылки на серию -->
+                                    <th:block th:if="${bookAuthorsMap != null and bookAuthorsMap.containsKey(bookIterStat.index) and !bookAuthorsMap[bookIterStat.index].isEmpty() and bookAuthorsMap[bookIterStat.index][0]['authorId'] != null}">
+                                        <a th:href="@{/(seriesAuthorId=${bookAuthorsMap[bookIterStat.index][0]['authorId']}, seriesName=${book.series}, fromNewBooks=true, newBooksDate=${searchDateStr})}"
+                                           class="series-link"
+                                           th:text="${book.series}">Серия</a>
+                                    </th:block>
+                                    <!-- Если authorId нет, показываем просто текст -->
+                                    <span th:if="${bookAuthorsMap == null or !bookAuthorsMap.containsKey(bookIterStat.index) or bookAuthorsMap[bookIterStat.index].isEmpty() or bookAuthorsMap[bookIterStat.index][0]['authorId'] == null}" 
+                                          th:text="${book.series}">Серия</span>
+                                </span>
+                                <span th:if="${book.seriesNumber != null}" class="book-value" 
+                                      th:text="'№ ' + ${book.seriesNumber}">№ 1</span>
+                            </div>
+                            <div class="book-detail-row" th:if="${book.genres != null and !book.genres.isEmpty()}">
+                                <span class="book-label">Жанры:</span>
+                                <span class="book-value" th:text="${#strings.listJoin(book.genres, ', ')}">Жанр</span>
+                            </div>
+                            <div class="book-detail-row">
+                                <span class="book-label">Язык:</span>
+                                <span class="book-value" th:text="${book.language != null ? book.language : 'не указан'}">ru</span>
+                            </div>
+                            <div class="book-detail-row" th:if="${book.date != null}">
+                                <span class="book-label">Дата добавления:</span>
+                                <span class="book-value" th:text="${#temporals.format(book.date, 'dd.MM.yyyy')}">01.01.2024</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Сообщение, если результатов нет -->
+                <div th:if="${searchResults != null and searchResults.isEmpty()}" class="no-results" style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); text-align: center;">
+                    <p style="color: #666; font-size: 16px;">Книги не найдены</p>
+                    <p style="color: #888; font-size: 14px; margin-top: 10px;">
+                        Нет книг избранных авторов с датой добавления >= 
+                        <strong th:text="${#temporals.format(searchDate, 'dd.MM.yyyy')}">01.01.2024</strong>
+                    </p>
+                </div>
+                
+                <!-- Сообщение, если поиск еще не выполнялся -->
+                <div th:if="${searchResults == null}" class="no-results" style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); text-align: center;">
+                    <p style="color: #666; font-size: 16px;">Выберите дату и нажмите "Поиск"</p>
+                    <p style="color: #888; font-size: 14px; margin-top: 10px;">
+                        По умолчанию выбрана дата: 
+                        <strong th:text="${#temporals.format(searchDate, 'dd.MM.yyyy')}">01.01.2024</strong>
+                        (текущая дата минус 30 дней)
+                    </p>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script>
+        // Функция для форматирования числа с пробелами каждые 3 символа с конца
+        function formatNumberWithSpaces(num) {
+            const numStr = num.toString();
+            let result = '';
+            let count = 0;
+            for (let i = numStr.length - 1; i >= 0; i--) {
+                if (count > 0 && count % 3 === 0) {
+                    result = ' ' + result;
+                }
+                result = numStr[i] + result;
+                count++;
+            }
+            return result;
+        }
+        
+        // Форматируем размеры файлов при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            const sizeElements = document.querySelectorAll('.book-file-size');
+            sizeElements.forEach(function(el) {
+                const size = el.getAttribute('data-size');
+                if (size) {
+                    const formattedSize = formatNumberWithSpaces(size);
+                    const formattedSpan = el.querySelector('.formatted-size');
+                    if (formattedSpan) {
+                        formattedSpan.textContent = formattedSize;
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>

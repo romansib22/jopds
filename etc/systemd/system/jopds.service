@@ -1,0 +1,11 @@
+[Unit]
+Description=jopds
+
+[Service]
+#PIDFile=/var/run/jopds.pid
+Type=forking
+ExecStart=/usr/local/rs/jopds/launch.sh
+#ExecStop=/bin/kill -15 $MAINPID
+
+[Install]
+WantedBy=multi-user.target

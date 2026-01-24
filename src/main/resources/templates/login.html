@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход - JOPDS</title>
+    <link rel="icon" th:href="@{/favicon.ico}" type="image/x-icon">
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <h1>JOPDS</h1>
+<!--            <h2>Каталог книг</h2>-->
+            
+            <form th:action="@{/login}" method="post">
+                <div class="form-group">
+                    <label for="username">Имя пользователя:</label>
+                    <input type="text" id="username" name="username" required autofocus/>
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Пароль:</label>
+                    <input type="password" id="password" name="password" required/>
+                </div>
+                
+                <div th:if="${param.error}" class="error-message">
+                    Неверное имя пользователя или пароль
+                </div>
+                
+                <div th:if="${param.logout}" class="success-message">
+                    Вы успешно вышли из системы
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Войти</button>
+            </form>
+            
+
+        </div>
+    </div>
+</body>
+</html>
+

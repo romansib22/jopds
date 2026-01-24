@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Авторы - JOPDS</title>
+    <link rel="icon" th:href="@{/favicon.ico}" type="image/x-icon">
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-left">
+                <h1>JOPDS - Каталог книг</h1>
+                <div class="header-stats">
+                    <a th:href="@{/}" style="color: #667eea; text-decoration: none;">← На главную</a>
+                </div>
+            </div>
+            <div class="user-info">
+                <span sec:authentication="name"></span>
+                <a th:href="@{/settings}" class="btn btn-link" title="Настройки">
+                    <span style="font-size: 18px;">⚙️</span>
+                </a>
+                <a th:if="${isAdmin}" th:href="@{/admin}" class="btn btn-link">Администрирование</a>
+                <form th:action="@{/logout}" method="post" style="display: inline;">
+                    <button type="submit" class="btn btn-link">Выйти</button>
+                </form>
+            </div>
+        </header>
+        
+        <main class="main-content">
+            <div class="authors-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                    <h2 style="margin: 0;">Авторы</h2>
+                    
+                    <!-- Фильтр (показываем только на главной странице) -->
+                    <div th:if="${navType == 'FIRST_CHARS'}" class="authors-filter">
+                        <form th:action="@{/authors/filter}" method="post" style="display: flex; gap: 10px; align-items: center;">
+                            <select name="filterType" id="filterType" class="filter-select">
+                                <option value="ALL" th:selected="${currentFilter == 'ALL'}">Все</option>
+                                <option value="RUSSIAN" th:selected="${currentFilter == 'RUSSIAN'}">Русский</option>
+                                <option value="ENGLISH" th:selected="${currentFilter == 'ENGLISH'}">Английский</option>
+                                <option value="OTHER" th:selected="${currentFilter == 'OTHER'}">Другие</option>
+                                <option value="SYMBOLS" th:selected="${currentFilter == 'SYMBOLS'}">Символы и цифры</option>
+                            </select>
+                            <button type="submit" class="btn btn-primary">Отфильтровать</button>
+                        </form>
+                    </div>
+                    
+                    <!-- Кнопка "Назад" -->
+                    <div th:if="${navigationResult.currentPrefix != null}">
+                        <a th:if="${backPrefix != null}" 
+                           th:href="@{/authors(prefix=${backPrefix})}" 
+                           class="btn btn-link"
+                           style="text-decoration: none;">
+                            ← Назад
+                        </a>
+                        <a th:if="${backPrefix == null}" 
+                           th:href="@{/authors}" 
+                           class="btn btn-link"
+                           style="text-decoration: none;">
+                            ← Назад
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Показываем первые символы -->
+                <div th:if="${navType == 'FIRST_CHARS'}" class="chars-list">
+                    <div class="chars-grid">
+                        <a th:each="char : ${navigationResult.items}" 
+                           th:href="@{/authors(prefix=${char})}"
+                           class="char-link"
+                           th:text="${char}">
+                            A
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Показываем префиксы -->
+                <div th:if="${navType == 'PREFIXES'}" class="prefixes-list">
+                    <div class="chars-grid">
+                        <a th:each="prefix : ${navigationResult.items}" 
+                           th:href="@{/authors(prefix=${prefix})}"
+                           class="char-link"
+                           th:text="${prefix}">
+                            АБ
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Показываем список авторов -->
+                <div th:if="${navType == 'AUTHORS'}" class="authors-list">
+                    <div th:class="${(navigationResult.currentPrefix != null and navigationResult.currentPrefix.length() >= 4) or navigationResult.authors.size() < 20 ? 'authors-list-container-single' : 'authors-list-container-multi'}">
+                        <div th:each="author : ${navigationResult.authors}" class="author-item" style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                            <div style="flex: 1;">
+                                <a th:if="${author.authorId != null}"
+                                   th:href="@{/(authorId=${author.authorId}, fromAuthors=true, authorsPrefix=${navigationResult.currentPrefix})}"
+                                   class="author-link"
+                                   th:text="${author.fullName}">
+                                    Имя автора
+                                </a>
+                                <span th:if="${author.authorId == null}"
+                                      class="author-name"
+                                      th:text="${author.fullName}">
+                                    Имя автора
+                                </span>
+                                <span th:if="${author.bookCount != null}" 
+                                      class="author-book-count"
+                                      th:text="'(' + ${author.bookCount} + ')'">
+                                    (0)
+                                </span>
+                            </div>
+                            <div th:if="${author.authorId != null and username != null}" style="display: flex; gap: 10px; align-items: center;">
+                                <button th:data-author-id="${author.authorId}"
+                                        th:data-full-name="${author.fullName}"
+                                        th:class="${(favoriteAuthorIds != null and favoriteAuthorIds.contains(author.authorId)) ? 'btn-favorite btn-favorite-remove' : 'btn-favorite btn-favorite-add'}"
+                                        th:title="${(favoriteAuthorIds != null and favoriteAuthorIds.contains(author.authorId)) ? 'Удалить из избранного' : 'Добавить в избранное'}"
+                                        th:aria-label="${(favoriteAuthorIds != null and favoriteAuthorIds.contains(author.authorId)) ? 'Удалить из избранного' : 'Добавить в избранное'}"
+                                        onclick="toggleFavoriteAuthor(this)">
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script th:if="${username != null}">
+        function toggleFavoriteAuthor(button) {
+            const authorId = button.getAttribute('data-author-id');
+            const fullName = button.getAttribute('data-full-name');
+            
+            // Сохраняем исходные классы и атрибуты
+            const originalClasses = button.className;
+            const originalTitle = button.title;
+            const originalAriaLabel = button.getAttribute('aria-label');
+            
+            // Определяем текущее состояние по классам
+            const isCurrentlyFavorite = button.classList.contains('btn-favorite-remove');
+            
+            // Оптимистично меняем классы и атрибуты сразу (до ответа сервера)
+            button.classList.remove('btn-favorite-add', 'btn-favorite-remove');
+            if (isCurrentlyFavorite) {
+                button.classList.add('btn-favorite-add');
+                button.title = 'Добавить в избранное';
+                button.setAttribute('aria-label', 'Добавить в избранное');
+            } else {
+                button.classList.add('btn-favorite-remove');
+                button.title = 'Удалить из избранного';
+                button.setAttribute('aria-label', 'Удалить из избранного');
+            }
+            
+            // Блокируем кнопку на время запроса
+            button.disabled = true;
+            
+            fetch('/api/favorite-authors/toggle-by-id', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    bookAuthorId: parseInt(authorId),
+                    fullName: fullName
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Ошибка сервера: ' + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Обновляем классы и атрибуты в соответствии с реальным статусом от сервера
+                const isFavorite = data.favorite === true || data.isFavorite === true || data.favorite === 'true' || data.isFavorite === 'true';
+                
+                button.classList.remove('btn-favorite-add', 'btn-favorite-remove');
+                if (isFavorite) {
+                    button.classList.add('btn-favorite-remove');
+                    button.title = 'Удалить из избранного';
+                    button.setAttribute('aria-label', 'Удалить из избранного');
+                } else {
+                    button.classList.add('btn-favorite-add');
+                    button.title = 'Добавить в избранное';
+                    button.setAttribute('aria-label', 'Добавить в избранное');
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка при переключении избранного:', error);
+                // Восстанавливаем исходные классы и атрибуты при ошибке
+                button.className = originalClasses;
+                button.title = originalTitle;
+                button.setAttribute('aria-label', originalAriaLabel);
+                alert('Ошибка при изменении статуса избранного. Попробуйте еще раз.');
+            })
+            .finally(() => {
+                // Разблокируем кнопку
+                button.disabled = false;
+            });
+        }
+    </script>
+</body>
+</html>

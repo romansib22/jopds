@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог книг - JOPDS</title>
+    <link rel="icon" th:href="@{/favicon.ico}" type="image/x-icon">
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-left">
+                <h1>JOPDS - Каталог книг</h1>
+                <div class="header-stats">
+                    <span>Книг в каталоге: <strong th:text="${bookCount}">0</strong></span>
+                    <span th:if="${scanDate != null}" class="scan-date">
+                        | Дата сканирования: <span th:text="${#temporals.format(scanDate, 'dd.MM.yyyy HH:mm')}">01.01.2024 12:00</span>
+                    </span>
+                </div>
+            </div>
+            <div class="user-info">
+                <span sec:authentication="name"></span>
+                <a th:href="@{/settings}" class="btn btn-link" title="Настройки">
+                    <span style="font-size: 18px;">⚙️</span>
+                </a>
+                <a th:if="${isAdmin}" th:href="@{/admin}" class="btn btn-link">Администрирование</a>
+                <form th:action="@{/logout}" method="post" style="display: inline;">
+                    <button type="submit" class="btn btn-link">Выйти</button>
+                </form>
+            </div>
+        </header>
+        
+        <main class="main-content">
+            <!-- Блок с кнопками авторов -->
+            <div class="authors-nav-section">
+                <a th:href="@{/authors}" class="btn btn-primary">Авторы</a>
+                <a th:href="@{/favorite-authors}" class="btn btn-primary">Избранные авторы</a>
+                <a th:href="@{/new-books}" class="btn btn-primary">Новинки избранных авторов</a>
+            </div>
+            
+            <div class="search-section">
+                <h2>Поиск книг</h2>
+                <form th:action="@{/}" method="get" class="search-form">
+                    <div class="search-controls">
+                        <select name="searchType" id="searchType" required>
+                            <option value="title" th:selected="${searchType == 'title'}">По названию книги</option>
+                            <option value="author" th:selected="${searchType == 'author' or searchType == null}">По автору</option>
+                            <option value="series" th:selected="${searchType == 'series'}">По названию серии</option>
+                        </select>
+                        
+                        <input 
+                            type="text" 
+                            name="query" 
+                            id="searchQuery" 
+                            placeholder="Введите запрос для поиска..." 
+                            th:value="${searchQuery}"
+                            required/>
+                        
+                        <button type="submit" class="btn btn-primary">Поиск</button>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input 
+                                type="checkbox" 
+                                name="fuzzySearch" 
+                                id="fuzzySearch"
+                                th:checked="${fuzzySearch == true}"
+                                style="margin-right: 8px;"/>
+                            <span>Нестрогий поиск</span>
+                        </label>
+                    </div>
+                </form>
+                
+                <!-- Информация о результатах поиска по книгам -->
+                <div th:if="${searchResults != null and !searchResults.isEmpty()}" class="search-info">
+                    <p>Найдено книг: <strong th:text="${searchResults.size()}">0</strong></p>
+                </div>
+                
+                <!-- Информация о результатах поиска по авторам -->
+                <div th:if="${searchAuthors != null and !searchAuthors.isEmpty()}" class="search-info">
+                    <p>Найдено авторов: <strong th:text="${searchAuthors.size()}">0</strong></p>
+                </div>
+                
+                <!-- Сообщение, если ничего не найдено -->
+                <div th:if="${(searchResults == null or searchResults.isEmpty()) and (searchAuthors == null or searchAuthors.isEmpty()) and searchQuery != null}" class="no-results">
+                    <p>Ничего не найдено</p>
+                </div>
+            </div>
+            
+            <!-- Результаты поиска по авторам -->
+            <div th:if="${searchAuthors != null and !searchAuthors.isEmpty()}" class="results-section">
+                <h2>Результаты поиска по авторам</h2>
+                <div class="authors-list" style="list-style: none; padding: 0;">
+                    <div th:each="author : ${searchAuthors}" style="margin-bottom: 10px; padding: 10px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <a th:if="${authorIdMap != null and authorIdMap.containsKey(author.fullName)}"
+                               th:href="@{/(authorId=${authorIdMap.get(author.fullName)})}" 
+                               th:text="${author.fullName}"
+                               style="font-size: 16px; color: #007bff; text-decoration: none; cursor: pointer;">
+                                Имя автора
+                            </a>
+                            <span th:if="${authorIdMap == null or !authorIdMap.containsKey(author.fullName)}"
+                                  th:text="${author.fullName}"
+                                  style="font-size: 16px;">
+                                Имя автора
+                            </span>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <span th:if="${author.bookCount != null}" 
+                                  style="font-size: 14px; color: #666; margin-left: 10px;">
+                                Книг: <strong th:text="${author.bookCount}">0</strong>
+                            </span>
+                            <button th:if="${author.authorId != null and username != null}"
+                                    th:data-author-id="${author.authorId}"
+                                    th:data-full-name="${author.fullName}"
+                                    th:class="${(favoriteAuthorIds != null and favoriteAuthorIds.contains(author.authorId)) ? 'btn-favorite btn-favorite-remove' : 'btn-favorite btn-favorite-add'}"
+                                    th:title="${(favoriteAuthorIds != null and favoriteAuthorIds.contains(author.authorId)) ? 'Удалить из избранного' : 'Добавить в избранное'}"
+                                    th:aria-label="${(favoriteAuthorIds != null and favoriteAuthorIds.contains(author.authorId)) ? 'Удалить из избранного' : 'Добавить в избранное'}"
+                                    onclick="toggleFavoriteAuthor(this)">
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Результаты поиска по книгам -->
+            <div th:if="${searchResults != null and !searchResults.isEmpty()}" class="results-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0;">
+                        <span th:if="${isSeriesView != null and isSeriesView}">Серия: <span th:text="${seriesName}">Серия</span></span>
+                        <span th:if="${isSeriesView == null or !isSeriesView}">
+                            <span th:if="${authorId == null}">Результаты поиска</span>
+                            <span th:if="${authorId != null}">Книги автора</span>
+                        </span>
+                    </h2>
+                    <div style="display: flex; gap: 10px;">
+                        <a th:if="${fromAuthors != null and fromAuthors}" 
+                           th:href="${authorsPrefix != null and !authorsPrefix.isEmpty() ? '/authors?prefix=' + authorsPrefix : '/authors'}"
+                           class="btn btn-link"
+                           style="text-decoration: none;">
+                            ← Назад к авторам
+                        </a>
+                        <a th:if="${fromNewBooks != null and fromNewBooks and isSeriesView != null and isSeriesView}" 
+                           th:href="@{/new-books(date=${newBooksDate})}"
+                           class="btn btn-link"
+                           style="text-decoration: none;">
+                            ← Назад к результатам поиска
+                        </a>
+                        <a th:if="${(fromNewBooks == null or !fromNewBooks) and isSeriesView != null and isSeriesView and authorId != null}" 
+                           th:href="@{/(authorId=${authorId})}"
+                           class="btn btn-link"
+                           style="text-decoration: none;">
+                            ← Назад к книгам автора
+                        </a>
+                        <a th:if="${showBackToSearch != null and showBackToSearch and backToSearchQuery != null}" 
+                           th:href="@{/(query=${backToSearchQuery}, searchType=${backToSearchType}, fuzzySearch=${backToFuzzySearch})}"
+                           class="btn btn-link"
+                           style="text-decoration: none;">
+                            ← Назад к результатам поиска
+                        </a>
+                    </div>
+                </div>
+                <div class="books-list">
+                    <div th:each="book, bookIterStat : ${searchResults}" class="book-card">
+                        <div class="book-header">
+                            <h3 class="book-title" th:text="${book.title}">Название</h3>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <span th:if="${book.fileSize != null}" 
+                                      class="book-file-size" 
+                                      th:data-size="${book.fileSize}"
+                                      style="color: #666; font-size: 14px; white-space: nowrap;">
+                                    <span class="formatted-size"></span> КБ
+                                </span>
+                                <a th:if="${book.format != null and !book.format.isEmpty() and book.id != null}" 
+                                   th:href="@{/api/books/download(bookId=${book.id})}"
+                                   class="btn-download"
+                                   th:text="${book.format.toUpperCase()}">
+                                    FB2
+                                </a>
+                                <a th:if="${book.format != null and book.format.equalsIgnoreCase('fb2') and book.id != null}" 
+                                   th:href="@{/api/books/download-zip(bookId=${book.id})}"
+                                   class="btn-download"
+                                   style="background-color: #28a745;"
+                                   title="Скачать сжатый файл (.fb2.zip)">
+                                    FB2.ZIP
+                                </a>
+                            </div>
+                        </div>
+                        <div class="book-details">
+                            <div class="book-detail-row">
+                                <span class="book-label">Автор:</span>
+                                <span class="book-value">
+                                    <!-- Используем bookAuthorsMap, если он есть и содержит авторов -->
+                                    <span th:if="${bookAuthorsMap != null and bookAuthorsMap.containsKey(bookIterStat.index) and !bookAuthorsMap[bookIterStat.index].isEmpty()}">
+                                        <span th:each="authorInfo, authorIterStat : ${bookAuthorsMap[bookIterStat.index]}">
+                                            <a th:if="${authorInfo['authorId'] != null and authorId == null}" 
+                                               th:href="@{/(authorId=${authorInfo['authorId']}, query=${searchQuery}, searchType=${searchType}, fuzzySearch=${fuzzySearch})}"
+                                               class="author-link"
+                                               th:text="${authorInfo['name']}">Автор</a>
+                                            <span th:if="${authorInfo['authorId'] == null or authorId != null}" 
+                                                  class="author-name-display"
+                                                  th:text="${authorInfo['name']}">Автор</span>
+                                            <span th:if="${!authorIterStat.last}">, </span>
+                                        </span>
+                                    </span>
+                                    <!-- Fallback: используем book.authors или book.authorsString -->
+                                    <span th:if="${bookAuthorsMap == null or !bookAuthorsMap.containsKey(bookIterStat.index) or bookAuthorsMap[bookIterStat.index].isEmpty()}">
+                                        <!-- Используем список авторов из book.authors -->
+                                        <span th:if="${book.authors != null and !book.authors.isEmpty()}">
+                                            <span th:each="author, authorIterStat : ${book.authors}">
+                                                <span class="author-name-display" th:text="${author.fullName}">Автор</span>
+                                                <span th:if="${!authorIterStat.last}">, </span>
+                                            </span>
+                                        </span>
+                                        <!-- Используем authorsString, если список авторов пустой -->
+                                        <span th:if="${(book.authors == null or book.authors.isEmpty()) and book.authorsString != null and !book.authorsString.isEmpty()}" 
+                                              class="author-name-display"
+                                              th:text="${book.authorsString}">Автор</span>
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="book-detail-row" th:if="${book.series != null and !book.series.isEmpty()}">
+                                <span class="book-label">Серия:</span>
+                                <span class="book-value">
+                                    <a th:if="${authorId != null}" 
+                                       th:href="@{/(seriesAuthorId=${authorId}, seriesName=${book.series})}"
+                                       class="series-link"
+                                       th:text="${book.series}">Серия</a>
+                                    <span th:if="${authorId == null}" th:text="${book.series}">Серия</span>
+                                </span>
+                                <span th:if="${book.seriesNumber != null}" class="book-value" 
+                                      th:text="'№ ' + ${book.seriesNumber}">№ 1</span>
+                            </div>
+                            <div class="book-detail-row" th:if="${book.genres != null and !book.genres.isEmpty()}">
+                                <span class="book-label">Жанры:</span>
+                                <span class="book-value" th:text="${#strings.listJoin(book.genres, ', ')}">Жанр</span>
+                            </div>
+                            <div class="book-detail-row">
+                                <span class="book-label">Язык:</span>
+                                <span class="book-value" th:text="${book.language != null ? book.language : 'не указан'}">ru</span>
+                            </div>
+                            <div class="book-detail-row" th:if="${book.date != null}">
+                                <span class="book-label">Дата добавления:</span>
+                                <span class="book-value" th:text="${#temporals.format(book.date, 'dd.MM.yyyy')}">01.01.2024</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script th:if="${username != null}">
+        function toggleFavoriteAuthor(button) {
+            const authorId = button.getAttribute('data-author-id');
+            const fullName = button.getAttribute('data-full-name');
+            
+            // Сохраняем исходные классы и атрибуты
+            const originalClasses = button.className;
+            const originalTitle = button.title;
+            const originalAriaLabel = button.getAttribute('aria-label');
+            
+            // Определяем текущее состояние по классам
+            const isCurrentlyFavorite = button.classList.contains('btn-favorite-remove');
+            
+            // Оптимистично меняем классы и атрибуты сразу (до ответа сервера)
+            button.classList.remove('btn-favorite-add', 'btn-favorite-remove');
+            if (isCurrentlyFavorite) {
+                button.classList.add('btn-favorite-add');
+                button.title = 'Добавить в избранное';
+                button.setAttribute('aria-label', 'Добавить в избранное');
+            } else {
+                button.classList.add('btn-favorite-remove');
+                button.title = 'Удалить из избранного';
+                button.setAttribute('aria-label', 'Удалить из избранного');
+            }
+            
+            // Блокируем кнопку на время запроса
+            button.disabled = true;
+            
+            fetch('/api/favorite-authors/toggle-by-id', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    bookAuthorId: parseInt(authorId),
+                    fullName: fullName
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Ошибка сервера: ' + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Обновляем классы и атрибуты в соответствии с реальным статусом от сервера
+                const isFavorite = data.favorite === true || data.isFavorite === true || data.favorite === 'true' || data.isFavorite === 'true';
+                
+                button.classList.remove('btn-favorite-add', 'btn-favorite-remove');
+                if (isFavorite) {
+                    button.classList.add('btn-favorite-remove');
+                    button.title = 'Удалить из избранного';
+                    button.setAttribute('aria-label', 'Удалить из избранного');
+                } else {
+                    button.classList.add('btn-favorite-add');
+                    button.title = 'Добавить в избранное';
+                    button.setAttribute('aria-label', 'Добавить в избранное');
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка при переключении избранного:', error);
+                // Восстанавливаем исходные классы и атрибуты при ошибке
+                button.className = originalClasses;
+                button.title = originalTitle;
+                button.setAttribute('aria-label', originalAriaLabel);
+                alert('Ошибка при изменении статуса избранного. Попробуйте еще раз.');
+            })
+            .finally(() => {
+                // Разблокируем кнопку
+                button.disabled = false;
+            });
+        }
+        
+        // Функция для форматирования числа с пробелами каждые 3 символа с конца
+        function formatNumberWithSpaces(num) {
+            const numStr = num.toString();
+            let result = '';
+            let count = 0;
+            for (let i = numStr.length - 1; i >= 0; i--) {
+                if (count > 0 && count % 3 === 0) {
+                    result = ' ' + result;
+                }
+                result = numStr[i] + result;
+                count++;
+            }
+            return result;
+        }
+        
+        // Форматируем размеры файлов при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            const sizeElements = document.querySelectorAll('.book-file-size');
+            sizeElements.forEach(function(el) {
+                const size = el.getAttribute('data-size');
+                if (size) {
+                    const formattedSize = formatNumberWithSpaces(size);
+                    const formattedSpan = el.querySelector('.formatted-size');
+                    if (formattedSpan) {
+                        formattedSpan.textContent = formattedSize;
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+

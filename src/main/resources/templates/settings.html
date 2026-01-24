@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройки - JOPDS</title>
+    <link rel="icon" th:href="@{/favicon.ico}" type="image/x-icon">
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Настройки</h1>
+            <div class="user-info">
+                <a th:href="@{/}" class="btn btn-link">Главная</a>
+                <form th:action="@{/logout}" method="post" style="display: inline;">
+                    <button type="submit" class="btn btn-link">Выйти</button>
+                </form>
+            </div>
+        </header>
+        
+        <main class="main-content">
+            <div th:if="${param.success}" class="success-message">
+                <p th:if="${param.success[0] == 'saved'}">Настройки успешно сохранены</p>
+                <p th:if="${param.success[0] == 'password_changed'}">Пароль успешно изменен</p>
+            </div>
+            
+            <div class="search-section">
+                <h2>Смена пароля</h2>
+                <p>Измените пароль для вашей учетной записи:</p>
+                <a th:href="@{/settings/change-password}" class="btn btn-primary">Поменять пароль</a>
+            </div>
+            
+            <div class="search-section">
+                <h2>Фильтр при поиске</h2>
+                <p>Выберите языки, по которым будет выполняться поиск книг:</p>
+                
+                <form th:action="@{/settings/search-filters}" method="post" class="search-form">
+                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+                    <div style="margin: 20px 0;">
+                        <label style="display: flex; align-items: center; margin: 15px 0; cursor: pointer;">
+                            <input type="checkbox" 
+                                   name="searchRussian" 
+                                   value="true"
+                                   th:checked="${settings?.searchRussian == true}"
+                                   style="width: 20px; height: 20px; margin-right: 10px;"/>
+                            <span style="font-size: 16px;">Искать книги на русском</span>
+                        </label>
+                        
+                        <label style="display: flex; align-items: center; margin: 15px 0; cursor: pointer;">
+                            <input type="checkbox" 
+                                   name="searchEnglish" 
+                                   value="true"
+                                   th:checked="${settings?.searchEnglish == true}"
+                                   style="width: 20px; height: 20px; margin-right: 10px;"/>
+                            <span style="font-size: 16px;">Искать книги на английском</span>
+                        </label>
+                        
+                        <label style="display: flex; align-items: center; margin: 15px 0; cursor: pointer;">
+                            <input type="checkbox" 
+                                   name="searchOtherLanguages" 
+                                   value="true"
+                                   th:checked="${settings?.searchOtherLanguages == true}"
+                                   style="width: 20px; height: 20px; margin-right: 10px;"/>
+                            <span style="font-size: 16px;">Искать книги на других языках</span>
+                        </label>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Сохранить настройки</button>
+                </form>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
