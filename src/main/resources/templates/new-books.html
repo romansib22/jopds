@@ -61,26 +61,28 @@
                     <div th:each="book, bookIterStat : ${searchResults}" class="book-card">
                         <div class="book-header">
                             <h3 class="book-title" th:text="${book.title}">Название</h3>
-                            <div style="display: flex; gap: 10px; align-items: center;">
+                            <div class="book-header-right">
                                 <span th:if="${book.fileSize != null}" 
                                       class="book-file-size" 
                                       th:data-size="${book.fileSize}"
                                       style="color: #666; font-size: 14px; white-space: nowrap;">
                                     <span class="formatted-size"></span> КБ
                                 </span>
-                                <a th:if="${book.format != null and !book.format.isEmpty() and book.id != null}" 
-                                   th:href="@{/api/books/download(bookId=${book.id})}"
-                                   class="btn-download"
-                                   th:text="${book.format.toUpperCase()}">
-                                    FB2
-                                </a>
-                                <a th:if="${book.format != null and book.format.equalsIgnoreCase('fb2') and book.id != null}" 
-                                   th:href="@{/api/books/download-zip(bookId=${book.id})}"
-                                   class="btn-download"
-                                   style="background-color: #28a745;"
-                                   title="Скачать сжатый файл (.fb2.zip)">
-                                    FB2.ZIP
-                                </a>
+                                <div class="book-download-buttons">
+                                    <a th:if="${book.format != null and !book.format.isEmpty() and book.id != null}" 
+                                       th:href="@{/api/books/download(bookId=${book.id})}"
+                                       class="btn-download"
+                                       th:text="${book.format.toUpperCase()}">
+                                        FB2
+                                    </a>
+                                    <a th:if="${book.format != null and book.format.equalsIgnoreCase('fb2') and book.id != null}" 
+                                       th:href="@{/api/books/download-zip(bookId=${book.id})}"
+                                       class="btn-download"
+                                       style="background-color: #28a745;"
+                                       title="Скачать сжатый файл (.fb2.zip)">
+                                        FB2.ZIP
+                                    </a>
+                                </div>
                             </div>
                         </div>
                         <div class="book-details">

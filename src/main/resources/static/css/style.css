@@ -28,6 +28,8 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
 }
 
 .header-left {
@@ -48,6 +50,7 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
 .header-stats strong {
@@ -63,6 +66,7 @@ body {
     display: flex;
     align-items: center;
     gap: 15px;
+    flex-wrap: wrap;
 }
 
 .user-info span {
@@ -87,6 +91,7 @@ body {
     gap: 15px;
     align-items: center;
     justify-content: flex-start;
+    flex-wrap: wrap;
 }
 
 /* Карточка статистики */
@@ -244,7 +249,21 @@ body {
     align-items: center;
     margin-bottom: 15px;
     flex-wrap: wrap;
-    gap: 15px;
+    gap: 10px;
+}
+
+.book-header-right {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.book-download-buttons {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
 }
 
 .book-title {
@@ -661,6 +680,73 @@ body {
         flex-direction: column;
         gap: 15px;
         text-align: center;
+        padding: 15px 20px;
+    }
+    
+    .header-left {
+        text-align: center;
+        width: 100%;
+    }
+    
+    .header h1 {
+        font-size: 22px;
+    }
+    
+    .header-stats {
+        justify-content: center;
+        font-size: 12px;
+    }
+    
+    .user-info {
+        justify-content: center;
+        gap: 10px;
+    }
+    
+    .user-info .btn-link {
+        font-size: 14px;
+        padding: 8px 12px;
+    }
+    
+    .authors-nav-section {
+        padding: 15px 20px;
+        gap: 10px;
+    }
+    
+    .authors-nav-section .btn-primary {
+        font-size: 14px;
+        padding: 10px 15px;
+        flex: 1;
+        min-width: 0;
+        text-align: center;
+    }
+    
+    .book-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .book-header-right {
+        width: 100%;
+        justify-content: space-between;
+        margin-top: 10px;
+    }
+    
+    .book-file-size {
+        font-size: 12px !important;
+    }
+    
+    .book-download-buttons {
+        gap: 8px;
+    }
+    
+    .btn-download {
+        font-size: 12px;
+        padding: 8px 15px;
+    }
+    
+    .book-title {
+        font-size: 18px;
+        min-width: 0;
     }
 
     .chars-grid {
@@ -686,5 +772,89 @@ body {
         width: 100%;
         min-width: auto;
     }
+    
+    .container {
+        padding: 15px;
+    }
+    
+    .authors-section > div:first-child {
+        flex-direction: column;
+        align-items: flex-start !important;
+    }
+    
+    .authors-section h2 {
+        width: 100%;
+        margin-bottom: 15px !important;
+    }
+    
+    .authors-filter {
+        width: 100%;
+    }
+    
+    .authors-filter form {
+        flex-direction: column;
+        width: 100%;
+        gap: 10px;
+    }
+    
+    .authors-filter form select,
+    .authors-filter form button {
+        width: 100%;
+    }
+    
+    /* Адаптивность для таблицы пользователей */
+    .users-table-desktop {
+        display: block;
+    }
+    
+    .users-table-mobile {
+        display: none;
+    }
+    
+    .users-table-desktop table {
+        font-size: 13px;
+    }
+    
+    .users-table-desktop th,
+    .users-table-desktop td {
+        padding: 8px !important;
+        font-size: 12px;
+    }
+    
+    .users-table-desktop select {
+        font-size: 12px;
+        padding: 4px !important;
+    }
+    
+    .users-table-desktop .btn-link {
+        font-size: 12px;
+        padding: 4px 8px;
+    }
 }
+
+/* Стили для карточек пользователей */
+.user-card {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+/* По умолчанию карточки скрыты */
+.users-table-mobile {
+    display: none;
+}
+
+/* На мобильных устройствах всегда показываем карточки */
+@media (max-width: 768px) {
+    .users-table-desktop {
+        display: none !important;
+    }
+    
+    .users-table-mobile {
+        display: block !important;
+    }
+}
+
 

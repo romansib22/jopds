@@ -10,7 +10,9 @@
 <body>
     <div class="container">
         <header class="header">
-            <h1>Администрирование</h1>
+            <div class="header-left">
+                <h1>Администрирование</h1>
+            </div>
             <div class="user-info">
                 <a th:href="@{/}" class="btn btn-link">Главная</a>
                 <form th:action="@{/logout}" method="post" style="display: inline;">
@@ -70,61 +72,117 @@
             
             <div class="results-section">
                 <h2>Список пользователей</h2>
-                <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-                    <thead>
-                        <tr style="background: #f5f5f5; border-bottom: 2px solid #ddd;">
-                            <th style="padding: 12px; text-align: left;">Логин</th>
-                            <th style="padding: 12px; text-align: left;">Роль</th>
-                            <th style="padding: 12px; text-align: left;">Описание</th>
-                            <th style="padding: 12px; text-align: left;">Статус</th>
-                            <th style="padding: 12px; text-align: left;">Действия</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr th:each="user : ${users}" style="border-bottom: 1px solid #ddd;">
-                            <td style="padding: 12px;" th:text="${user.login}">Логин</td>
-                            <td style="padding: 12px;" th:text="${user.role != null ? user.role.name : 'N/A'}">Роль</td>
-                            <td style="padding: 12px;" th:text="${user.description != null ? user.description : '-'}">Описание</td>
-                            <td style="padding: 12px;">
-                                <span th:if="${user.isActive}" style="color: green;">Активен</span>
-                                <span th:unless="${user.isActive}" style="color: red;">Неактивен</span>
-                            </td>
-                            <td style="padding: 12px;">
-                                <form th:action="@{/admin/users/{login}/role(login=${user.login})}" method="post" style="display: inline;">
-                                    <select name="roleId" onchange="this.form.submit()" style="padding: 5px;">
-                                        <option value="">Изменить роль</option>
-                                        <option th:each="role : ${roles}" 
-                                                th:value="${role.id}" 
-                                                th:selected="${user.roleId == role.id}"
-                                                th:text="${role.name}">Роль</option>
-                                    </select>
-                                </form>
-                                <form th:if="${user.isActive and (currentUserLogin == null or currentUserLogin != user.login)}" 
-                                      th:action="@{/admin/users/{login}/deactivate(login=${user.login})}" 
-                                      method="post" 
-                                      style="display: inline; margin-left: 10px;">
-                                    <button type="submit" class="btn btn-link" style="color: red;" 
-                                            onclick="return confirm('Вы уверены, что хотите деактивировать пользователя?')">
-                                        Деактивировать
-                                    </button>
-                                </form>
-                                <span th:if="${user.isActive and currentUserLogin != null and currentUserLogin == user.login}" 
-                                      style="color: #999; font-size: 14px; margin-left: 10px;">
-                                    (нельзя деактивировать самого себя)
-                                </span>
-                                <form th:unless="${user.isActive}" 
-                                      th:action="@{/admin/users/{login}/activate(login=${user.login})}" 
-                                      method="post" 
-                                      style="display: inline; margin-left: 10px;">
-                                    <button type="submit" class="btn btn-link" style="color: green;" 
-                                            onclick="return confirm('Вы уверены, что хотите активировать пользователя?')">
-                                        Активировать
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                <!-- Десктопная таблица -->
+                <div class="users-table-desktop">
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                        <thead>
+                            <tr style="background: #f5f5f5; border-bottom: 2px solid #ddd;">
+                                <th style="padding: 12px; text-align: left;">Логин</th>
+                                <th style="padding: 12px; text-align: left;">Роль</th>
+                                <th style="padding: 12px; text-align: left;">Описание</th>
+                                <th style="padding: 12px; text-align: left;">Статус</th>
+                                <th style="padding: 12px; text-align: left;">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="user : ${users}" style="border-bottom: 1px solid #ddd;">
+                                <td style="padding: 12px;" th:text="${user.login}">Логин</td>
+                                <td style="padding: 12px;" th:text="${user.role != null ? user.role.name : 'N/A'}">Роль</td>
+                                <td style="padding: 12px;" th:text="${user.description != null ? user.description : '-'}">Описание</td>
+                                <td style="padding: 12px;">
+                                    <span th:if="${user.isActive}" style="color: green;">Активен</span>
+                                    <span th:unless="${user.isActive}" style="color: red;">Неактивен</span>
+                                </td>
+                                <td style="padding: 12px;">
+                                    <form th:action="@{/admin/users/{login}/role(login=${user.login})}" method="post" style="display: inline;">
+                                        <select name="roleId" onchange="this.form.submit()" style="padding: 5px;">
+                                            <option value="">Изменить роль</option>
+                                            <option th:each="role : ${roles}" 
+                                                    th:value="${role.id}" 
+                                                    th:selected="${user.roleId == role.id}"
+                                                    th:text="${role.name}">Роль</option>
+                                        </select>
+                                    </form>
+                                    <form th:if="${user.isActive and (currentUserLogin == null or currentUserLogin != user.login)}" 
+                                          th:action="@{/admin/users/{login}/deactivate(login=${user.login})}" 
+                                          method="post" 
+                                          style="display: inline; margin-left: 10px;">
+                                        <button type="submit" class="btn btn-link" style="color: red;" 
+                                                onclick="return confirm('Вы уверены, что хотите деактивировать пользователя?')">
+                                            Деактивировать
+                                        </button>
+                                    </form>
+                                    <span th:if="${user.isActive and currentUserLogin != null and currentUserLogin == user.login}" 
+                                          style="color: #999; font-size: 14px; margin-left: 10px;">
+                                        (нельзя деактивировать самого себя)
+                                    </span>
+                                    <form th:unless="${user.isActive}" 
+                                          th:action="@{/admin/users/{login}/activate(login=${user.login})}" 
+                                          method="post" 
+                                          style="display: inline; margin-left: 10px;">
+                                        <button type="submit" class="btn btn-link" style="color: green;" 
+                                                onclick="return confirm('Вы уверены, что хотите активировать пользователя?')">
+                                            Активировать
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Мобильная версия (карточки) -->
+                <div class="users-table-mobile">
+                    <div th:each="user : ${users}" class="user-card">
+                        <div style="margin-bottom: 10px;">
+                            <strong style="color: #667eea; font-size: 16px;" th:text="${user.login}">Логин</strong>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <span style="color: #666; font-weight: 600;">Роль:</span>
+                            <span th:text="${user.role != null ? user.role.name : 'N/A'}">Роль</span>
+                        </div>
+                        <div style="margin-bottom: 8px;" th:if="${user.description != null}">
+                            <span style="color: #666; font-weight: 600;">Описание:</span>
+                            <span th:text="${user.description}">Описание</span>
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <span style="color: #666; font-weight: 600;">Статус:</span>
+                            <span th:if="${user.isActive}" style="color: green;">Активен</span>
+                            <span th:unless="${user.isActive}" style="color: red;">Неактивен</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                            <form th:action="@{/admin/users/{login}/role(login=${user.login})}" method="post">
+                                <select name="roleId" onchange="this.form.submit()" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                                    <option value="">Изменить роль</option>
+                                    <option th:each="role : ${roles}" 
+                                            th:value="${role.id}" 
+                                            th:selected="${user.roleId == role.id}"
+                                            th:text="${role.name}">Роль</option>
+                                </select>
+                            </form>
+                            <form th:if="${user.isActive and (currentUserLogin == null or currentUserLogin != user.login)}" 
+                                  th:action="@{/admin/users/{login}/deactivate(login=${user.login})}" 
+                                  method="post">
+                                <button type="submit" class="btn btn-link" style="color: red; width: 100%; text-align: left; padding: 8px 0;" 
+                                        onclick="return confirm('Вы уверены, что хотите деактивировать пользователя?')">
+                                    Деактивировать
+                                </button>
+                            </form>
+                            <span th:if="${user.isActive and currentUserLogin != null and currentUserLogin == user.login}" 
+                                  style="color: #999; font-size: 13px;">
+                                (нельзя деактивировать самого себя)
+                            </span>
+                            <form th:unless="${user.isActive}" 
+                                  th:action="@{/admin/users/{login}/activate(login=${user.login})}" 
+                                  method="post">
+                                <button type="submit" class="btn btn-link" style="color: green; width: 100%; text-align: left; padding: 8px 0;" 
+                                        onclick="return confirm('Вы уверены, что хотите активировать пользователя?')">
+                                    Активировать
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -261,6 +319,47 @@
             if (statusCheckInterval) {
                 clearInterval(statusCheckInterval);
             }
+        });
+        
+        // Функция для проверки, влезает ли таблица на экран
+        function checkTableOverflow() {
+            const desktopTable = document.querySelector('.users-table-desktop');
+            const mobileCards = document.querySelector('.users-table-mobile');
+            
+            if (!desktopTable || !mobileCards) {
+                return;
+            }
+            
+            const table = desktopTable.querySelector('table');
+            if (!table) {
+                return;
+            }
+            
+            // Проверяем, переполняется ли таблица
+            const container = desktopTable.parentElement;
+            const tableWidth = table.scrollWidth;
+            const containerWidth = container.clientWidth;
+            
+            // Если таблица шире контейнера, показываем карточки
+            if (tableWidth > containerWidth) {
+                desktopTable.style.display = 'none';
+                mobileCards.style.display = 'block';
+            } else {
+                desktopTable.style.display = 'block';
+                mobileCards.style.display = 'none';
+            }
+        }
+        
+        // Проверяем при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            checkTableOverflow();
+        });
+        
+        // Проверяем при изменении размера окна
+        let resizeTimeout;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(checkTableOverflow, 100);
         });
     </script>
 </body>
