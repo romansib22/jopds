@@ -39,7 +39,28 @@ public class SearchService {
 
         String query = authorQuery.trim();
         String lowerQuery = query.toLowerCase();
-        String[] queryWords = lowerQuery.split("\\s+");
+        String[] queryWords;
+        
+        // Если строка содержит запятую, пытаемся разделить по ", " (запятая + пробел)
+        if (lowerQuery.contains(",")) {
+            queryWords = lowerQuery.split(", ");
+            log.debug("Разделение по ', ': получено {} элементов", queryWords.length);
+            // Если split не разделил строку (массив из одного элемента), пробуем разделить просто по запятой
+            if (queryWords.length == 1 && queryWords[0].equals(lowerQuery)) {
+                log.debug("Split по ', ' не разделил строку, пробуем разделить по ','");
+                queryWords = lowerQuery.split(",");
+                // Убираем пробелы в начале и конце каждого элемента
+                for (int i = 0; i < queryWords.length; i++) {
+                    queryWords[i] = queryWords[i].trim();
+                }
+                log.debug("Разделение по ',': получено {} элементов", queryWords.length);
+            }
+        } else {
+            queryWords = lowerQuery.split("\\s+");
+            log.debug("Разделение по пробелам: получено {} элементов", queryWords.length);
+        }
+        
+        log.debug("Итоговый массив queryWords: длина={}, элементы={}", queryWords.length, java.util.Arrays.toString(queryWords));
 
         List<Object[]> matchingResults = new ArrayList<>();
 

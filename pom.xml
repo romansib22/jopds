@@ -10,7 +10,7 @@
     </parent>
     <groupId>ru.rs</groupId>
     <artifactId>jopds</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <name>java opds catalogue</name>
     <description>OPDS каталогизатор</description>
     <properties>

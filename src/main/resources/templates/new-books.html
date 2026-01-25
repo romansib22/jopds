@@ -69,6 +69,13 @@
                                     <span class="formatted-size"></span> КБ
                                 </span>
                                 <div class="book-download-buttons">
+                                    <button th:if="${book.format != null and book.format.equalsIgnoreCase('fb2') and book.id != null}"
+                                            th:data-book-id="${book.id}"
+                                            class="btn-annotation"
+                                            title="Показать аннотацию"
+                                            onclick="showAnnotation(this)">
+                                        📄 Аннотация
+                                    </button>
                                     <a th:if="${book.format != null and !book.format.isEmpty() and book.id != null}" 
                                        th:href="@{/api/books/download(bookId=${book.id})}"
                                        class="btn-download"
@@ -178,6 +185,22 @@
         </main>
     </div>
     
+    <!-- Модальное окно для аннотации -->
+    <div id="annotationModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Аннотация</h2>
+                <span class="modal-close" onclick="closeAnnotationModal()">&times;</span>
+            </div>
+            <div class="modal-body" id="annotationContent">
+                <div class="loading">Загрузка аннотации...</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeAnnotationModal()">Закрыть</button>
+            </div>
+        </div>
+    </div>
+    
     <script>
         // Функция для форматирования числа с пробелами каждые 3 символа с конца
         function formatNumberWithSpaces(num) {
@@ -208,6 +231,63 @@
                 }
             });
         });
+        
+        // Функция для показа аннотации
+        function showAnnotation(button) {
+            const bookId = button.getAttribute('data-book-id');
+            if (!bookId) {
+                alert('Ошибка: ID книги не найден');
+                return;
+            }
+            
+            // Показываем модальное окно
+            const modal = document.getElementById('annotationModal');
+            const content = document.getElementById('annotationContent');
+            modal.style.display = 'block';
+            content.innerHTML = '<div class="loading">Загрузка аннотации...</div>';
+            
+            // Загружаем аннотацию
+            fetch('/api/books/annotation?bookId=' + bookId)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Ошибка сервера: ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        content.innerHTML = '<div class="error-message">' + data.error + '</div>';
+                    } else if (data.message) {
+                        content.innerHTML = '<div class="info-message">' + data.message + '</div>';
+                    } else if (data.annotation) {
+                        // Форматируем аннотацию (сохраняем переносы строк)
+                        const formattedAnnotation = data.annotation
+                            .replace(/\n\n/g, '</p><p>')
+                            .replace(/\n/g, '<br>');
+                        content.innerHTML = '<div class="annotation-text"><p>' + formattedAnnotation + '</p></div>';
+                    } else {
+                        content.innerHTML = '<div class="info-message">Аннотация не найдена</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка при загрузке аннотации:', error);
+                    content.innerHTML = '<div class="error-message">Ошибка при загрузке аннотации. Попробуйте еще раз.</div>';
+                });
+        }
+        
+        // Функция для закрытия модального окна
+        function closeAnnotationModal() {
+            const modal = document.getElementById('annotationModal');
+            modal.style.display = 'none';
+        }
+        
+        // Закрытие модального окна при клике вне его
+        window.onclick = function(event) {
+            const modal = document.getElementById('annotationModal');
+            if (event.target == modal) {
+                closeAnnotationModal();
+            }
+        }
     </script>
 </body>
 </html>
