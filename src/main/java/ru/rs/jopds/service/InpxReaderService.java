@@ -20,6 +20,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 
 /**
@@ -101,6 +102,37 @@ public class InpxReaderService {
     private List<Book> readInpxFileFromPath(Path inpxPath) {
         log.info("Чтение INPX файла: {}", inpxPath);
 
+        // Проверяем, что файл существует и не пустой
+        try {
+            if (!Files.exists(inpxPath)) {
+                throw new IllegalArgumentException("INPX файл не найден: " + inpxPath);
+            }
+            
+            long fileSize = Files.size(inpxPath);
+            if (fileSize == 0) {
+                throw new IllegalArgumentException("INPX файл пустой: " + inpxPath);
+            }
+            
+            log.debug("Размер INPX файла: {} байт", fileSize);
+            
+            // Проверяем, что файл является ZIP архивом (читаем первые байты)
+            if (fileSize >= 4) {
+                byte[] header = new byte[4];
+                try (var inputStream = Files.newInputStream(inpxPath)) {
+                    int bytesRead = inputStream.read(header);
+                    if (bytesRead < 4) {
+                        throw new IllegalArgumentException("INPX файл слишком мал или поврежден: " + inpxPath);
+                    }
+                    // ZIP файл начинается с "PK" (0x50 0x4B) и следующих двух байт (обычно 0x03 0x04 для локального заголовка)
+                    if (header[0] != 0x50 || header[1] != 0x4B) {
+                        throw new IllegalArgumentException("Файл не является валидным ZIP архивом (INPX файл должен быть ZIP архивом): " + inpxPath);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Ошибка при проверке INPX файла: " + e.getMessage(), e);
+        }
+
         List<Book> books = new ArrayList<>();
 
         try (ZipFile zipFile = new ZipFile(inpxPath.toFile(), StandardCharsets.UTF_8)) {
@@ -123,8 +155,21 @@ public class InpxReaderService {
 
             log.info("Всего найдено книг: {}", books.size());
 
+        } catch (ZipException e) {
+            String errorMsg = String.format(
+                "Ошибка при чтении ZIP архива INPX файла '%s': %s. " +
+                "Возможные причины: файл поврежден, не является ZIP архивом, или запись файла не завершена.",
+                inpxPath, e.getMessage()
+            );
+            log.error(errorMsg, e);
+            throw new RuntimeException(errorMsg, e);
         } catch (IOException e) {
-            throw new RuntimeException("Ошибка при чтении INPX файла: " + e.getMessage(), e);
+            String errorMsg = String.format(
+                "Ошибка при чтении INPX файла '%s': %s",
+                inpxPath, e.getMessage()
+            );
+            log.error(errorMsg, e);
+            throw new RuntimeException(errorMsg, e);
         }
 
         return books;
