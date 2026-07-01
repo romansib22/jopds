@@ -5,7 +5,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.rs.jopds.config.InpxProperties;
 import ru.rs.jopds.model.Book;
+import ru.rs.jopds.model.ScanStatus;
 import ru.rs.jopds.service.BookService;
+import ru.rs.jopds.service.InpxImportService;
 import ru.rs.jopds.service.InpxReaderService;
 import ru.rs.jopds.service.ScanStatusService;
 
@@ -23,6 +25,7 @@ public class InpxController {
     private final BookService bookService;
     private final InpxProperties inpxProperties;
     private final ScanStatusService scanStatusService;
+    private final InpxImportService inpxImportService;
     
     /**
      * Читает INPX файл из настроенной директории и возвращает каталог книг (без сохранения в БД)
@@ -48,43 +51,29 @@ public class InpxController {
      */
     @PostMapping("/import")
     public ResponseEntity<String> importCatalog() {
-        // Проверяем, не идет ли уже сканирование
-        if (scanStatusService.isScanning()) {
+        if (!scanStatusService.tryStartScan()) {
             return ResponseEntity.status(409) // Conflict
                 .body("Сканирование уже выполняется. Пожалуйста, подождите.");
         }
-        
-        try {
-            // Проверяем, что указан путь к INPX файлу
-            if (inpxProperties.getFilePath() == null || inpxProperties.getFilePath().isEmpty()) {
-                return ResponseEntity.badRequest()
-                    .body("Не задан путь к inpx-файлу");
-            }
-            
-            // Устанавливаем флаг сканирования
-            scanStatusService.setScanning(true);
-            
-            String filePath = inpxProperties.getFilePath();
-            List<Book> books = inpxReaderService.readInpxFileByPath(filePath);
-            
-            // Сохраняем книги с указанием пути к файлу для записи результата сканирования
-            bookService.saveAllBooks(books, filePath);
-            return ResponseEntity.ok("Импортировано книг: " + books.size());
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                .body("Ошибка при импорте: " + e.getMessage());
-        } finally {
-            // Сбрасываем флаг сканирования
-            scanStatusService.setScanning(false);
+
+        if (inpxProperties.getFilePath() == null || inpxProperties.getFilePath().isEmpty()) {
+            scanStatusService.completeError("Не задан путь к inpx-файлу");
+            return ResponseEntity.badRequest()
+                .body("Не задан путь к inpx-файлу");
         }
+
+        String filePath = inpxProperties.getFilePath();
+        inpxImportService.importCatalogAsync(filePath);
+        return ResponseEntity.accepted()
+            .body("Сканирование запущено. Дождитесь завершения.");
     }
     
     /**
      * Проверяет статус процесса сканирования
      */
     @GetMapping("/import/status")
-    public ResponseEntity<Boolean> getScanStatus() {
-        return ResponseEntity.ok(scanStatusService.isScanning());
+    public ResponseEntity<ScanStatus> getScanStatus() {
+        return ResponseEntity.ok(scanStatusService.getStatus());
     }
     
     /**

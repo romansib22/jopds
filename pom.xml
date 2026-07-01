@@ -10,7 +10,7 @@
     </parent>
     <groupId>ru.rs</groupId>
     <artifactId>jopds</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <name>java opds catalogue</name>
     <description>OPDS каталогизатор</description>
     <properties>
@@ -82,6 +82,11 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Поддержка .env файлов -->
         <dependency>
             <groupId>me.paulschwarz</groupId>
@@ -93,6 +98,15 @@
     <build>
         <finalName>jopds</finalName>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <spring.profiles.active>test</spring.profiles.active>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

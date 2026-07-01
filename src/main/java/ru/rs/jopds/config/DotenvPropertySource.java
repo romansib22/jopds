@@ -28,7 +28,13 @@ public class DotenvPropertySource extends PropertySource<Map<String, String>> {
 
     private static Map<String, String> loadEnvFile() {
         Map<String, String> properties = new HashMap<>();
-        
+
+        String activeProfiles = System.getProperty("spring.profiles.active", "");
+        if (activeProfiles.contains("test")) {
+            System.out.println("[DotenvPropertySource] Пропуск загрузки .env в тестовом профиле");
+            return properties;
+        }
+
         try {
             Path envPath = Paths.get(ENV_FILE);
             if (!Files.exists(envPath)) {

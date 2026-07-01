@@ -5,6 +5,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
+import ru.rs.jopds.JopdsApplication;
 import ru.rs.jopds.repository.entity.Role;
 import ru.rs.jopds.repository.entity.User;
 import ru.rs.jopds.service.UserService;
@@ -35,6 +36,7 @@ public class AdminController {
         model.addAttribute("users", users);
         model.addAttribute("roles", roles);
         model.addAttribute("currentUserLogin", currentUserLogin);
+        model.addAttribute("appVersion", getAppVersion());
         return "admin";
     }
     
@@ -102,5 +104,10 @@ public class AdminController {
         } catch (Exception e) {
             return "redirect:/admin?error=" + e.getMessage();
         }
+    }
+
+    private String getAppVersion() {
+        String version = JopdsApplication.class.getPackage().getImplementationVersion();
+        return version != null ? version : "dev";
     }
 }

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Администрирование - JOPDS</title>
-    <link rel="icon" th:href="@{/favicon.ico}" type="image/x-icon">
+    <link rel="icon" th:href="@{/favicon.png}" type="image/png">
     <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -12,6 +12,9 @@
         <header class="header">
             <div class="header-left">
                 <h1>Администрирование</h1>
+                <div class="header-stats">
+                    <span>v<span th:text="${appVersion}">1.0.2</span></span>
+                </div>
             </div>
             <div class="user-info">
                 <a th:href="@{/}" class="btn btn-link">Главная</a>
@@ -42,36 +45,13 @@
                 <div id="scanStatus" style="display: none; margin-top: 15px;"></div>
             </div>
             
-            <div class="search-section">
-                <h2>Создать нового пользователя</h2>
-                <form th:action="@{/admin/users/create}" method="post" class="search-form">
-                    <div class="form-group">
-                        <label for="login">Логин:</label>
-                        <input type="text" id="login" name="login" required maxlength="100"/>
-                    </div>
-                    <div class="form-group">
-                        <label for="password">Пароль:</label>
-                        <input type="password" id="password" name="password" required/>
-                    </div>
-                    <div class="form-group">
-                        <label for="roleId">Роль:</label>
-                        <select id="roleId" name="roleId" required>
-                            <option value="">Выберите роль</option>
-                            <option th:each="role : ${roles}" 
-                                    th:value="${role.id}" 
-                                    th:text="${role.name + ' - ' + role.description}">Роль</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="description">Описание (необязательно):</label>
-                        <textarea id="description" name="description" rows="3" maxlength="500"></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Создать пользователя</button>
-                </form>
-            </div>
-            
             <div class="results-section">
-                <h2>Список пользователей</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                    <h2 style="margin: 0;">Список пользователей</h2>
+                    <button type="button" class="btn btn-primary" onclick="openCreateUserModal()">
+                        Создать пользователя
+                    </button>
+                </div>
                 <!-- Десктопная таблица -->
                 <div class="users-table-desktop">
                     <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
@@ -186,46 +166,147 @@
             </div>
         </main>
     </div>
+
+    <!-- Модальное окно создания пользователя -->
+    <div id="createUserModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Создать пользователя</h2>
+                <span class="modal-close" onclick="closeCreateUserModal()">&times;</span>
+            </div>
+            <form th:action="@{/admin/users/create}" method="post" id="createUserForm">
+                <div class="modal-body">
+                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+                    <div class="form-group">
+                        <label for="login">Логин:</label>
+                        <input type="text" id="login" name="login" required maxlength="100"/>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Пароль:</label>
+                        <input type="password" id="password" name="password" required/>
+                    </div>
+                    <div class="form-group">
+                        <label for="roleId">Роль:</label>
+                        <select id="roleId" name="roleId" required class="filter-select" style="width: 100%;">
+                            <option value="">Выберите роль</option>
+                            <option th:each="role : ${roles}"
+                                    th:value="${role.id}"
+                                    th:text="${role.name + ' - ' + role.description}">Роль</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="description">Описание (необязательно):</label>
+                        <textarea id="description" name="description" rows="3" maxlength="500"
+                                  style="width: 100%; padding: 12px 15px; border: 2px solid #e0e0e0; border-radius: 5px; font-size: 16px; font-family: inherit; resize: vertical;"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link" onclick="closeCreateUserModal()">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Создать</button>
+                </div>
+            </form>
+        </div>
+    </div>
     
     <script>
         let statusCheckInterval = null;
+        let wasScanning = false;
         
         // Проверка статуса сканирования при загрузке страницы
         document.addEventListener('DOMContentLoaded', function() {
             checkScanStatus();
+            checkTableOverflow();
         });
+
+        function openCreateUserModal() {
+            const modal = document.getElementById('createUserModal');
+            if (modal) {
+                modal.style.display = 'block';
+                const loginInput = document.getElementById('login');
+                if (loginInput) {
+                    loginInput.focus();
+                }
+            }
+        }
+
+        function closeCreateUserModal() {
+            const modal = document.getElementById('createUserModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        function handleScanCompleted(status) {
+            const scanButton = document.getElementById('scanButton');
+            const scanStatus = document.getElementById('scanStatus');
+
+            scanButton.disabled = false;
+            scanButton.textContent = 'Запустить сканирование';
+
+            if (status.error) {
+                scanStatus.style.display = 'block';
+                scanStatus.className = 'no-results';
+                scanStatus.innerHTML = '<p><strong>Ошибка:</strong> ' + status.error + '</p>';
+                return;
+            }
+
+            if (status.message) {
+                scanStatus.style.display = 'block';
+                scanStatus.className = 'search-info';
+                scanStatus.innerHTML = '<p><strong>Успешно:</strong> ' + status.message + '</p>';
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+                return;
+            }
+
+            scanStatus.style.display = 'none';
+            scanStatus.innerHTML = '';
+        }
+
+        function resetScanIdleState() {
+            const scanButton = document.getElementById('scanButton');
+            const scanStatus = document.getElementById('scanStatus');
+
+            scanButton.disabled = false;
+            scanButton.textContent = 'Запустить сканирование';
+            scanStatus.style.display = 'none';
+            scanStatus.innerHTML = '';
+        }
         
         // Функция проверки статуса сканирования
         function checkScanStatus() {
             fetch('/api/inpx/import/status')
                 .then(response => response.json())
-                .then(isScanning => {
+                .then(status => {
                     const scanButton = document.getElementById('scanButton');
                     const scanStatus = document.getElementById('scanStatus');
+                    const isScanning = status.scanning === true;
                     
                     if (isScanning) {
-                        // Сканирование идет - блокируем кнопку и показываем сообщение
                         scanButton.disabled = true;
                         scanButton.textContent = 'Сканирование...';
                         scanStatus.style.display = 'block';
                         scanStatus.className = 'search-info';
                         scanStatus.innerHTML = '<p>Идет сканирование INPX-файла. Пожалуйста, подождите...</p>';
                         
-                        // Запускаем периодическую проверку статуса
                         if (!statusCheckInterval) {
-                            statusCheckInterval = setInterval(checkScanStatus, 2000); // Проверяем каждые 2 секунды
+                            statusCheckInterval = setInterval(checkScanStatus, 2000);
                         }
                     } else {
-                        // Сканирование не идет - разблокируем кнопку
-                        scanButton.disabled = false;
-                        scanButton.textContent = 'Запустить сканирование';
-                        
-                        // Останавливаем периодическую проверку
                         if (statusCheckInterval) {
                             clearInterval(statusCheckInterval);
                             statusCheckInterval = null;
                         }
+
+                        if (wasScanning) {
+                            handleScanCompleted(status);
+                        } else {
+                            resetScanIdleState();
+                        }
                     }
+                    
+                    wasScanning = isScanning;
                 })
                 .catch(error => {
                     console.error('Ошибка при проверке статуса сканирования:', error);
@@ -236,37 +317,28 @@
             const scanButton = document.getElementById('scanButton');
             const scanStatus = document.getElementById('scanStatus');
             
-            // Проверяем статус перед началом
             fetch('/api/inpx/import/status')
                 .then(response => response.json())
-                .then(isScanning => {
-                    if (isScanning) {
-                        // Сканирование уже идет
+                .then(status => {
+                    if (status.scanning) {
                         scanStatus.style.display = 'block';
                         scanStatus.className = 'search-info';
                         scanStatus.innerHTML = '<p>Идет сканирование INPX-файла. Пожалуйста, подождите...</p>';
                         scanButton.disabled = true;
                         scanButton.textContent = 'Сканирование...';
-                        // Запускаем периодическую проверку
+                        wasScanning = true;
                         if (!statusCheckInterval) {
                             statusCheckInterval = setInterval(checkScanStatus, 2000);
                         }
                         return;
                     }
                     
-                    // Блокируем кнопку и показываем статус
                     scanButton.disabled = true;
                     scanButton.textContent = 'Сканирование...';
                     scanStatus.style.display = 'block';
                     scanStatus.className = 'search-info';
-                    scanStatus.innerHTML = '<p>Идет сканирование INPX-файла. Пожалуйста, подождите...</p>';
+                    scanStatus.innerHTML = '<p>Запуск сканирования INPX-файла...</p>';
                     
-                    // Запускаем периодическую проверку статуса
-                    if (!statusCheckInterval) {
-                        statusCheckInterval = setInterval(checkScanStatus, 2000);
-                    }
-                    
-                    // Отправляем POST-запрос
                     fetch('/api/inpx/import', {
                         method: 'POST',
                         headers: {
@@ -276,35 +348,28 @@
                     .then(response => {
                         if (!response.ok) {
                             return response.text().then(text => {
-                                throw new Error(text || 'Ошибка при сканировании');
+                                throw new Error(text || 'Ошибка при запуске сканирования');
                             });
                         }
                         return response.text();
                     })
                     .then(data => {
-                        // Успешное сканирование
+                        wasScanning = true;
+                        scanStatus.style.display = 'block';
                         scanStatus.className = 'search-info';
-                        scanStatus.innerHTML = '<p><strong>Успешно:</strong> ' + data + '</p>';
+                        scanStatus.innerHTML = '<p>Идет сканирование INPX-файла. Пожалуйста, подождите...</p>';
                         
-                        // Обновляем страницу для отображения новых данных
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1000);
+                        if (!statusCheckInterval) {
+                            statusCheckInterval = setInterval(checkScanStatus, 2000);
+                        }
+                        checkScanStatus();
                     })
                     .catch(error => {
-                        // Ошибка при сканировании
                         scanStatus.className = 'no-results';
                         scanStatus.innerHTML = '<p><strong>Ошибка:</strong> ' + error.message + '</p>';
-                        
-                        // Останавливаем периодическую проверку
-                        if (statusCheckInterval) {
-                            clearInterval(statusCheckInterval);
-                            statusCheckInterval = null;
-                        }
-                        
-                        // Разблокируем кнопку при ошибке
                         scanButton.disabled = false;
                         scanButton.textContent = 'Запустить сканирование';
+                        wasScanning = false;
                     });
                 })
                 .catch(error => {
@@ -314,6 +379,14 @@
                 });
         }
         
+        // Закрытие модального окна при клике вне его
+        window.addEventListener('click', function(event) {
+            const createUserModal = document.getElementById('createUserModal');
+            if (createUserModal && event.target === createUserModal) {
+                closeCreateUserModal();
+            }
+        });
+
         // Очистка интервала при уходе со страницы
         window.addEventListener('beforeunload', function() {
             if (statusCheckInterval) {
@@ -349,11 +422,6 @@
                 mobileCards.style.display = 'none';
             }
         }
-        
-        // Проверяем при загрузке страницы
-        document.addEventListener('DOMContentLoaded', function() {
-            checkTableOverflow();
-        });
         
         // Проверяем при изменении размера окна
         let resizeTimeout;
