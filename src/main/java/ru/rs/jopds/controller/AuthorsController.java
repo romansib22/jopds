@@ -11,7 +11,7 @@ import ru.rs.jopds.service.AuthorService;
 import ru.rs.jopds.service.FavoriteAuthorService;
 import ru.rs.jopds.service.UserService;
 
-import javax.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpSession;
 import java.util.Set;
 import java.util.stream.Collectors;
 

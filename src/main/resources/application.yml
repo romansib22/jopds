@@ -2,14 +2,18 @@ spring:
   application:
     name: jopds
 
-server:
-  port: ${SERVER_PORT:8080}
-
   # Конфигурация подключения к MySQL БД
+  # (раньше блок был ошибочно вложен в server: — spring.datasource.* молча
+  # не применялся, настройки Hikari/JPA/Flyway игнорировались)
   datasource:
-    url: ${DATASOURCE_URL:jdbc:mysql://localhost:3306/jopds?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true}
+    # permitMysqlScheme: MariaDB-драйвер принимает схему jdbc:mysql:// только
+    # с этим параметром (в проде дописать в DATASOURCE_URL)
+    url: ${DATASOURCE_URL:jdbc:mysql://localhost:3306/jopds?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true&permitMysqlScheme}
     username: ${DATASOURCE_USERNAME:root}
     password: ${DATASOURCE_PASSWORD:root}
+    # Драйвер MariaDB (СУБД — MariaDB): понимает и схему jdbc:mysql://,
+    # так что строка подключения не меняется
+    driver-class-name: org.mariadb.jdbc.Driver
     # Пул соединений HikariCP (вместо DriverManagerDataSource без пула:
     # раньше каждый запрос к БД открывал новое физическое соединение)
     hikari:
@@ -26,7 +30,8 @@ server:
     show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQL8Dialect        
+        # Диалект не задаём: Hibernate 6 определяет его сам по JDBC-URL
+        # (класс MySQL8Dialect из Hibernate 5 удалён)
         format_sql: true
         jdbc:
           batch_size: 5000
@@ -41,6 +46,9 @@ server:
     baseline-on-migrate: true
     baseline-version: 0
 
+server:
+  port: ${SERVER_PORT:8080}
+
 # Конфигурация для INPX сервиса
 inpx:
   # Полный путь к INPX файлу (задается через переменную окружения INPX_FILE_PATH)
@@ -49,10 +57,10 @@ inpx:
   # INPX_FILE_PATH=C:/Книги/fb2/fb2_local.inpx
   # INPX_FILE_PATH=/home/user/library.inpx
   # INPX_FILE_PATH=./inpx/library.inpx
-  
+
   # Имя INPX файла (опционально, если не указано, берется первый найденный)
   # fileName: library.inpx
-  
+
   # Путь к директории с архивами книг (ZIP файлы с книгами)
   # Используется для скачивания книг из архивов
   # Задается через переменную окружения INPX_BOOK_DIRECTORY
