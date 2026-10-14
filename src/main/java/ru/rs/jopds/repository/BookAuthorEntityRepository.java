@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import ru.rs.jopds.repository.entity.BookAuthorEntity;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +15,11 @@ public interface BookAuthorEntityRepository extends JpaRepository<BookAuthorEnti
      * Находит автора по полному имени
      */
     Optional<BookAuthorEntity> findByFullName(String fullName);
+
+    /**
+     * Находит авторов по списку полных имён одним запросом (анти-N+1)
+     */
+    List<BookAuthorEntity> findByFullNameIn(Collection<String> fullNames);
 
     /**
      * Строгий поиск авторов по фамилии

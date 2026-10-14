@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -180,12 +181,11 @@ public class WebController {
                 // Поиск по автору возвращает список авторов
                 List<BookAuthor> authors = searchService.searchByAuthor(query.trim(), isFuzzySearch);
                 model.addAttribute("searchAuthors", authors);
-                // Создаем Map для быстрого доступа к ID автора по fullName
+                // ID уже есть в результатах поиска (searchByAuthor возвращает id) — Map строим в памяти, без запросов в БД
                 Map<String, Long> authorIdMap = new HashMap<>();
                 for (BookAuthor author : authors) {
-                    Long foundAuthorId = searchService.getAuthorIdByFullName(author.getFullName());
-                    if (foundAuthorId != null) {
-                        authorIdMap.put(author.getFullName(), foundAuthorId);
+                    if (author.getAuthorId() != null) {
+                        authorIdMap.put(author.getFullName(), author.getAuthorId());
                     }
                 }
                 model.addAttribute("authorIdMap", authorIdMap);
@@ -218,7 +218,13 @@ public class WebController {
                 Map<String, Long> authorIdMapFromResults = new HashMap<>();
                 // Создаем Map для каждой книги: список авторов с их ID
                 Map<Integer, List<Map<String, Object>>> bookAuthorsMap = new HashMap<>();
-                
+
+                // Авторов резолвим одним batch-запросом, а не по запросу на каждое имя (анти-N+1)
+                Map<String, BookAuthor> authorsByName = searchService.getAuthorsByFullNames(collectAuthorNames(results));
+                for (Map.Entry<String, BookAuthor> entry : authorsByName.entrySet()) {
+                    authorIdMapFromResults.put(entry.getKey(), entry.getValue().getAuthorId());
+                }
+
                 int bookIndex = 0;
                 for (Book book : results) {
                     List<Map<String, Object>> authorsList = new ArrayList<>();
@@ -231,13 +237,6 @@ public class WebController {
                             if (!trimmedAuthor.isEmpty()) {
                                 Map<String, Object> authorInfo = new HashMap<>();
                                 authorInfo.put("name", trimmedAuthor);
-                                
-                                if (!authorIdMapFromResults.containsKey(trimmedAuthor)) {
-                                    Long foundAuthorId = searchService.getAuthorIdByFullName(trimmedAuthor);
-                                    if (foundAuthorId != null) {
-                                        authorIdMapFromResults.put(trimmedAuthor, foundAuthorId);
-                                    }
-                                }
                                 
                                 Long foundAuthorIdForMap = authorIdMapFromResults.get(trimmedAuthor);
                                 authorInfo.put("authorId", foundAuthorIdForMap);
@@ -259,7 +258,7 @@ public class WebController {
                                 
                                 // Если не нашли в book.getAuthors(), пытаемся получить из БД
                                 if (!authorFound) {
-                                    BookAuthor authorFromDb = searchService.getAuthorByFullName(trimmedAuthor);
+                                    BookAuthor authorFromDb = authorsByName.get(trimmedAuthor);
                                     if (authorFromDb != null) {
                                         authorInfo.put("lastName", authorFromDb.getLastName());
                                         authorInfo.put("firstName", authorFromDb.getFirstName());
@@ -278,13 +277,10 @@ public class WebController {
                                 authorInfo.put("name", author.getFullName());
                                 
                                 Long foundAuthorId = author.getAuthorId();
-                                if (foundAuthorId == null && !authorIdMapFromResults.containsKey(author.getFullName())) {
-                                    foundAuthorId = searchService.getAuthorIdByFullName(author.getFullName());
-                                    if (foundAuthorId != null) {
-                                        authorIdMapFromResults.put(author.getFullName(), foundAuthorId);
-                                    }
-                                } else if (foundAuthorId == null) {
-                                    foundAuthorId = authorIdMapFromResults.get(author.getFullName());
+                                if (foundAuthorId == null) {
+                                    // ID берём из заранее полученного batch-справочника авторов
+                                    BookAuthor fromDb = authorsByName.get(author.getFullName());
+                                    foundAuthorId = fromDb != null ? fromDb.getAuthorId() : null;
                                 }
                                 
                                 authorInfo.put("authorId", foundAuthorId);
@@ -363,7 +359,10 @@ public class WebController {
         if (date != null && !date.trim().isEmpty()) {
             List<Book> books = searchService.getBooksByFavoriteAuthorsAndDate(username, searchDate);
             model.addAttribute("searchResults", books);
-            
+
+            // ID авторов для книг без списка авторов резолвим одним batch-запросом (анти-N+1)
+            Map<String, Long> authorIdByName = searchService.getAuthorIdMapByFullNames(collectAuthorNames(books));
+
             // Создаем Map для каждой книги: список авторов с их ID и ФИО
             Map<Integer, List<Map<String, Object>>> bookAuthorsMap = new HashMap<>();
             int bookIndex = 0;
@@ -393,8 +392,7 @@ public class WebController {
                         if (!trimmedAuthor.isEmpty()) {
                             Map<String, Object> authorInfo = new HashMap<>();
                             authorInfo.put("name", trimmedAuthor);
-                            Long foundAuthorId = searchService.getAuthorIdByFullName(trimmedAuthor);
-                            authorInfo.put("authorId", foundAuthorId);
+                            authorInfo.put("authorId", authorIdByName.get(trimmedAuthor));
                             authorsList.add(authorInfo);
                         }
                     }
@@ -411,6 +409,31 @@ public class WebController {
         return "new-books";
     }
     
+    /**
+     * Собирает все имена авторов из списка книг (для последующего batch-резолва ID одним запросом)
+     */
+    private Set<String> collectAuthorNames(List<Book> books) {
+        Set<String> names = new LinkedHashSet<>();
+        for (Book book : books) {
+            if (book.getAuthorsString() != null && !book.getAuthorsString().isEmpty()) {
+                for (String authorName : book.getAuthorsString().split(",")) {
+                    String trimmed = authorName.trim();
+                    if (!trimmed.isEmpty()) {
+                        names.add(trimmed);
+                    }
+                }
+            }
+            if (book.getAuthors() != null) {
+                for (BookAuthor author : book.getAuthors()) {
+                    if (author.getFullName() != null) {
+                        names.add(author.getFullName());
+                    }
+                }
+            }
+        }
+        return names;
+    }
+
     /**
      * Выполняет поиск в зависимости от типа (только для поиска по названию и серии)
      */
