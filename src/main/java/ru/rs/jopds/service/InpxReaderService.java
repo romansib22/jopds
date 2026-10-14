@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -37,12 +38,30 @@ public class InpxReaderService {
     private static final String[] DELIMITERS = {"\t", "\u0004"};
 
     /**
-     * Читает INPX файл по полному пути
+     * Читает INPX файл по полному пути и составляет каталог книг
+     * (весь список в памяти — для эндпоинтов предпросмотра каталога;
+     * для импорта используйте {@link #streamInpxFileByPath})
      *
      * @param filePath полный путь к INPX файлу
      * @return список книг из каталога
      */
     public List<Book> readInpxFileByPath(String filePath) {
+        List<Book> books = new ArrayList<>();
+        streamInpxFileByPath(filePath, books::addAll, Integer.MAX_VALUE);
+        return books;
+    }
+
+    /**
+     * Читает INPX файл по полному пути и передаёт книги батчами потребителю,
+     * не удерживая весь каталог в памяти
+     *
+     * @param filePath      полный путь к INPX файлу
+     * @param batchConsumer получает порции книг; должен обработать батч
+     *                      синхронно и не сохранять ссылку на него
+     * @param batchSize     количество книг в батче
+     * @return общее количество прочитанных книг
+     */
+    public long streamInpxFileByPath(String filePath, Consumer<List<Book>> batchConsumer, int batchSize) {
         Path inpxPath = Paths.get(filePath);
 
         if (!Files.exists(inpxPath)) {
@@ -53,17 +72,37 @@ public class InpxReaderService {
             throw new IllegalArgumentException("Указанный путь не является файлом: " + filePath);
         }
 
-        return readInpxFileFromPath(inpxPath);
+        return streamInpxFile(inpxPath, batchConsumer, batchSize);
     }
 
     /**
      * Читает INPX файл из указанной директории и составляет каталог книг
+     * (весь список в памяти — для эндпоинтов предпросмотра каталога;
+     * для импорта используйте {@link #streamInpxFileFromDir})
      *
      * @param directoryPath путь к директории с INPX файлами
      * @param inpxFileName  имя INPX файла (если null, ищет первый .inpx файл)
      * @return список книг из каталога
      */
     public List<Book> readInpxFile(String directoryPath, String inpxFileName) {
+        List<Book> books = new ArrayList<>();
+        streamInpxFileFromDir(directoryPath, inpxFileName, books::addAll, Integer.MAX_VALUE);
+        return books;
+    }
+
+    /**
+     * Читает INPX файл из указанной директории и передаёт книги батчами потребителю,
+     * не удерживая весь каталог в памяти
+     */
+    public long streamInpxFileFromDir(String directoryPath, String inpxFileName,
+                                      Consumer<List<Book>> batchConsumer, int batchSize) {
+        return streamInpxFile(resolveInpxPath(directoryPath, inpxFileName), batchConsumer, batchSize);
+    }
+
+    /**
+     * Находит INPX файл в директории (по имени или первый попавшийся .inpx)
+     */
+    public Path resolveInpxPath(String directoryPath, String inpxFileName) {
         Path dirPath = Paths.get(directoryPath);
 
         if (!Files.exists(dirPath) || !Files.isDirectory(dirPath)) {
@@ -93,13 +132,13 @@ public class InpxReaderService {
             throw new IllegalArgumentException("INPX файл не найден: " + inpxPath);
         }
 
-        return readInpxFileFromPath(inpxPath);
+        return inpxPath;
     }
 
     /**
-     * Читает INPX файл из указанного пути (внутренний метод)
+     * Читает INPX файл и передаёт книги батчами потребителю (внутренний метод)
      */
-    private List<Book> readInpxFileFromPath(Path inpxPath) {
+    long streamInpxFile(Path inpxPath, Consumer<List<Book>> batchConsumer, int batchSize) {
         log.info("Чтение INPX файла: {}", inpxPath);
 
         // Проверяем, что файл существует и не пустой
@@ -133,14 +172,16 @@ public class InpxReaderService {
             throw new RuntimeException("Ошибка при проверке INPX файла: " + e.getMessage(), e);
         }
 
-        List<Book> books = new ArrayList<>();
+        long totalBooks = 0;
+        List<Book> batch = new ArrayList<>(Math.min(batchSize, 4096));
 
         try (ZipFile zipFile = new ZipFile(inpxPath.toFile(), StandardCharsets.UTF_8)) {
             // Читаем структуру файла
             List<String> structure = readStructure(zipFile);
             log.debug("Структура INP файла: {}", structure);
 
-            // Читаем все INP файлы из архива
+            // Читаем все INP файлы из архива, книги копятся в батч
+            // и отдаются потребителю порциями — весь каталог в памяти не держим
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
@@ -148,12 +189,17 @@ public class InpxReaderService {
 
                 if (entryName.toLowerCase().endsWith(INP_EXTENSION)) {
                     log.info("Обработка INP файла: {}", entryName);
-                    List<Book> booksFromInp = parseInpFile(zipFile, entry, structure, entryName);
-                    books.addAll(booksFromInp);
+                    totalBooks += parseInpFile(zipFile, entry, structure, entryName, batch, batchSize, batchConsumer);
                 }
             }
 
-            log.info("Всего найдено книг: {}", books.size());
+            // Отдаём остаток последнего батча
+            if (!batch.isEmpty()) {
+                batchConsumer.accept(new ArrayList<>(batch));
+                batch.clear();
+            }
+
+            log.info("Всего найдено книг: {}", totalBooks);
 
         } catch (ZipException e) {
             String errorMsg = String.format(
@@ -172,7 +218,7 @@ public class InpxReaderService {
             throw new RuntimeException(errorMsg, e);
         }
 
-        return books;
+        return totalBooks;
     }
 
     /**
@@ -207,10 +253,12 @@ public class InpxReaderService {
     }
 
     /**
-     * Парсит INP файл и возвращает список книг
+     * Парсит INP файл: книги складываются в общий батч, при заполнении
+     * батч отдаётся потребителю. Возвращает количество книг в этом INP файле.
      */
-    private List<Book> parseInpFile(ZipFile zipFile, ZipEntry entry, List<String> structure, String entryName) throws IOException {
-        List<Book> books = new ArrayList<>();
+    private long parseInpFile(ZipFile zipFile, ZipEntry entry, List<String> structure, String entryName,
+                              List<Book> batch, int batchSize, Consumer<List<Book>> batchConsumer) throws IOException {
+        long bookCount = 0;
 
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(zipFile.getInputStream(entry), StandardCharsets.UTF_8))) {
@@ -223,7 +271,12 @@ public class InpxReaderService {
                 try {
                     Book book = parseBookLine(line, structure, entryName);
                     if (book != null) {
-                        books.add(book);
+                        batch.add(book);
+                        bookCount++;
+                        if (batch.size() >= batchSize) {
+                            batchConsumer.accept(new ArrayList<>(batch));
+                            batch.clear();
+                        }
                     }
                 } catch (Exception e) {
                     log.warn("Ошибка при парсинге строки {} в файле {}: {}",
@@ -232,7 +285,7 @@ public class InpxReaderService {
             }
         }
 
-        return books;
+        return bookCount;
     }
 
     /**

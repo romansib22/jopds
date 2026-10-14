@@ -2,7 +2,7 @@ package ru.rs.jopds.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -16,13 +16,16 @@ import ru.rs.jopds.config.InpxProperties;
 import ru.rs.jopds.repository.BookRepository;
 import ru.rs.jopds.repository.entity.BookEntity;
 
-import java.io.ByteArrayOutputStream;
+import java.io.BufferedOutputStream;
+import java.io.FilterInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.ZipEntry;
@@ -97,62 +100,40 @@ public class BookDownloadController {
                 return ResponseEntity.notFound().build();
             }
 
-            // Открываем архив и извлекаем файл
-            byte[] fileContent;
-            try (ZipFile zipFile = new ZipFile(archiveFullPath.toFile())) {
-                // Ищем файл в архиве (может быть с разными разделителями пути)
-                ZipEntry entry = zipFile.getEntry(filePath);
-                if (entry == null) {
-                    // Пробуем с обратными слешами
-                    entry = zipFile.getEntry(filePath.replace("/", "\\"));
-                }
-                if (entry == null) {
-                    // Пробуем с прямыми слешами
-                    entry = zipFile.getEntry(filePath.replace("\\", "/"));
-                }
-
-                if (entry == null) {
-                    log.error("Файл не найден в архиве: {} в {}", filePath, archiveFullPath);
-                    return ResponseEntity.notFound().build();
-                }
-
-                // Читаем весь файл из архива в память
-                try (InputStream inputStream = zipFile.getInputStream(entry)) {
-                    fileContent = inputStream.readAllBytes();
-                }
-            }
-
-            // Создаем ресурс из прочитанных данных
-            ByteArrayResource resource = new ByteArrayResource(fileContent);
-
-            // Определяем имя файла для скачивания
-            String fileName = bookEntity.getTitle();
-            //Если книга из серии, то добавляем номер серии.
-            if (bookEntity.getSeries() != null && !bookEntity.getSeries().isEmpty() && bookEntity.getSeriesNumber() != null) {
-                String seriesNumber = bookEntity.getSeriesNumber().toString();
-                if (seriesNumber.length() == 1) {
-                    seriesNumber = "0" + seriesNumber;
-                }
-                fileName = seriesNumber + "." + fileName;
-            }
-
-            // Очищаем имя файла от недопустимых символов
-            fileName = sanitizeFileName(fileName);
+            // Имя файла и заголовки формируем до открытия архива
+            String fileName = buildBookFileName(bookEntity);
             // Если у файла нет расширения, добавляем формат
             if (format != null && !format.trim().isEmpty() && !fileName.toLowerCase().endsWith("." + format.toLowerCase())) {
                 fileName = fileName + "." + format.toLowerCase();
             }
-
-            // Формируем заголовок Content-Disposition для принудительного сохранения файла
-            // Используем правильное кодирование UTF-8 для кириллицы (RFC 5987)
             ContentDisposition contentDisposition = ContentDisposition.attachment()
                     .filename(fileName, StandardCharsets.UTF_8)
                     .build();
 
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .body(resource);
+            // Открываем архив и отдаём файл потоком: книга не читается в память целиком,
+            // ZipFile закрывается вместе с потоком ответа (после отправки тела)
+            ZipFile zipFile = new ZipFile(archiveFullPath.toFile());
+            try {
+                ZipEntry entry = findZipEntry(zipFile, filePath);
+                if (entry == null) {
+                    zipFile.close();
+                    log.error("Файл не найден в архиве: {} в {}", filePath, archiveFullPath);
+                    return ResponseEntity.notFound().build();
+                }
+
+                Resource resource = new InputStreamResource(
+                        new ZipFileEntryStream(zipFile, zipFile.getInputStream(entry)));
+                ResponseEntity.BodyBuilder response = ResponseEntity.ok()
+                        .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM);
+                if (entry.getSize() >= 0) {
+                    response.contentLength(entry.getSize());
+                }
+                return response.body(resource);
+            } catch (IOException e) {
+                zipFile.close();
+                throw e;
+            }
 
         } catch (Exception e) {
             log.error("Ошибка при скачивании книги: {}", e.getMessage(), e);
@@ -215,79 +196,56 @@ public class BookDownloadController {
                 return ResponseEntity.notFound().build();
             }
 
-            // Открываем архив и извлекаем файл
-            byte[] fileContent;
-            try (ZipFile zipFile = new ZipFile(archiveFullPath.toFile())) {
-                ZipEntry entry = zipFile.getEntry(filePath);
-                if (entry == null) {
-                    entry = zipFile.getEntry(filePath.replace("/", "\\"));
-                }
-                if (entry == null) {
-                    entry = zipFile.getEntry(filePath.replace("\\", "/"));
-                }
-
-                if (entry == null) {
-                    log.error("Файл не найден в архиве: {} в {}", filePath, archiveFullPath);
-                    return ResponseEntity.notFound().build();
-                }
-
-                // Читаем весь файл из архива в память
-                try (InputStream inputStream = zipFile.getInputStream(entry)) {
-                    fileContent = inputStream.readAllBytes();
-                }
-            }
-
-            // Сжимаем файл в zip архив
-            byte[] zipContent;
-            try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                 ZipOutputStream zos = new ZipOutputStream(baos)) {
-
-                // Определяем имя файла для zip архива
-                String fileName = bookEntity.getTitle();
-                if (bookEntity.getSeries() != null && !bookEntity.getSeries().isEmpty() && bookEntity.getSeriesNumber() != null) {
-                    String seriesNumber = bookEntity.getSeriesNumber().toString();
-                    if (seriesNumber.length() == 1) {
-                        seriesNumber = "0" + seriesNumber;
-                    }
-                    fileName = seriesNumber + "." + fileName;
-                }
-                fileName = sanitizeFileName(fileName);
-                String zipEntryName = fileName + ".fb2";
-
-                // Добавляем файл в zip архив
-                ZipEntry zipEntry = new ZipEntry(zipEntryName);
-                zipEntry.setSize(fileContent.length);
-                zos.putNextEntry(zipEntry);
-                zos.write(fileContent);
-                zos.closeEntry();
-
-                zos.finish();
-                zipContent = baos.toByteArray();
-            }
-
-            // Создаем ресурс из сжатых данных
-            ByteArrayResource resource = new ByteArrayResource(zipContent);
-
-            // Определяем имя zip файла для скачивания
-            String zipFileName = bookEntity.getTitle();
-            if (bookEntity.getSeries() != null && !bookEntity.getSeries().isEmpty() && bookEntity.getSeriesNumber() != null) {
-                String seriesNumber = bookEntity.getSeriesNumber().toString();
-                if (seriesNumber.length() == 1) {
-                    seriesNumber = "0" + seriesNumber;
-                }
-                zipFileName = seriesNumber + "." + zipFileName;
-            }
-            zipFileName = sanitizeFileName(zipFileName) + ".fb2.zip";
-
-            // Формируем заголовок Content-Disposition
+            // Имя файла для скачивания
+            String zipFileName = buildBookFileName(bookEntity) + ".fb2.zip";
             ContentDisposition contentDisposition = ContentDisposition.attachment()
                     .filename(zipFileName, StandardCharsets.UTF_8)
                     .build();
 
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .body(resource);
+            // Раньше fb2 целиком читался в память и там же собирался zip (2 копии книги в heap).
+            // Теперь zip пишется во временный файл и отдаётся из него потоком:
+            // в памяти держится только буфер упаковки.
+            Path tempZip = Files.createTempFile("jopds-download-", ".zip");
+            boolean handedOff = false;
+            try {
+                try (ZipFile zipFile = new ZipFile(archiveFullPath.toFile());
+                     ZipOutputStream zos = new ZipOutputStream(
+                             new BufferedOutputStream(Files.newOutputStream(tempZip)))) {
+
+                    ZipEntry entry = findZipEntry(zipFile, filePath);
+                    if (entry == null) {
+                        log.error("Файл не найден в архиве: {} в {}", filePath, archiveFullPath);
+                        return ResponseEntity.notFound().build();
+                    }
+
+                    ZipEntry zipEntry = new ZipEntry(buildBookFileName(bookEntity) + ".fb2");
+                    if (entry.getSize() >= 0) {
+                        zipEntry.setSize(entry.getSize());
+                    }
+                    zos.putNextEntry(zipEntry);
+                    try (InputStream inputStream = zipFile.getInputStream(entry)) {
+                        inputStream.transferTo(zos);
+                    }
+                    zos.closeEntry();
+                }
+
+                // Отдаём готовый zip из временного файла; DELETE_ON_CLOSE удалит его,
+                // когда Spring закроет поток после отправки ответа
+                long zipSize = Files.size(tempZip);
+                InputStream responseStream = Files.newInputStream(tempZip, StandardOpenOption.DELETE_ON_CLOSE);
+                handedOff = true;
+
+                return ResponseEntity.ok()
+                        .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .contentLength(zipSize)
+                        .body(new InputStreamResource(responseStream));
+            } finally {
+                // Если ответ не был создан (ошибка/404) — временный файл удаляем сами
+                if (!handedOff) {
+                    tempZip.toFile().delete();
+                }
+            }
 
         } catch (Exception e) {
             log.error("Ошибка при скачивании книги в zip: {}", e.getMessage(), e);
@@ -551,6 +509,61 @@ public class BookDownloadController {
         }
         
         return sb.toString().trim();
+    }
+
+    /**
+     * Имя файла для скачивания: номер серии + название (без расширения)
+     */
+    private String buildBookFileName(BookEntity bookEntity) {
+        String fileName = bookEntity.getTitle();
+        //Если книга из серии, то добавляем номер серии.
+        if (bookEntity.getSeries() != null && !bookEntity.getSeries().isEmpty() && bookEntity.getSeriesNumber() != null) {
+            String seriesNumber = bookEntity.getSeriesNumber().toString();
+            if (seriesNumber.length() == 1) {
+                seriesNumber = "0" + seriesNumber;
+            }
+            fileName = seriesNumber + "." + fileName;
+        }
+        return sanitizeFileName(fileName);
+    }
+
+    /**
+     * Ищет файл в архиве, перебирая варианты разделителей пути
+     */
+    private ZipEntry findZipEntry(ZipFile zipFile, String filePath) {
+        ZipEntry entry = zipFile.getEntry(filePath);
+        if (entry == null) {
+            // Пробуем с обратными слешами
+            entry = zipFile.getEntry(filePath.replace("/", "\\"));
+        }
+        if (entry == null) {
+            // Пробуем с прямыми слешами
+            entry = zipFile.getEntry(filePath.replace("\\", "/"));
+        }
+        return entry;
+    }
+
+    /**
+     * Поток записи из архива: при закрытии закрывает и сам ZipFile.
+     * Spring закрывает поток тела ответа после отправки — тогда же
+     * освобождается и файловый дескриптор архива.
+     */
+    private static class ZipFileEntryStream extends FilterInputStream {
+        private final ZipFile zipFile;
+
+        ZipFileEntryStream(ZipFile zipFile, InputStream in) {
+            super(in);
+            this.zipFile = zipFile;
+        }
+
+        @Override
+        public void close() throws IOException {
+            try {
+                super.close();
+            } finally {
+                zipFile.close();
+            }
+        }
     }
 
     /**

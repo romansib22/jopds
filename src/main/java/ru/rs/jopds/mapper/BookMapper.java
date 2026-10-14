@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import ru.rs.jopds.model.Book;
 import ru.rs.jopds.model.BookAuthor;
 import ru.rs.jopds.model.BooksToSave;
+import ru.rs.jopds.model.ImportContext;
 import ru.rs.jopds.repository.GenreRepository;
 import ru.rs.jopds.repository.entity.*;
 import ru.rs.jopds.service.FavoriteAuthorService;
@@ -21,21 +22,29 @@ import java.util.*;
 public class BookMapper {
     private final GenreRepository genreRepository;
     private final FavoriteAuthorService favoriteAuthorService;
-    private Long sequence = 0L;
-    private Long authorsSequence = 0L;
 
-    public BooksToSave toEntity(List<Book> books) {
-        resetSequence();
-        BooksToSave result = new BooksToSave();
-        long bookId = getSequence();
+    /**
+     * Готовит контекст импорта: загружает карту жанров и карту избранных авторов
+     * (один раз на весь импорт, а не на каждый батч)
+     */
+    public ImportContext createImportContext() {
         Map<String, String> genreMap = new HashMap<>();
         genreRepository.findAll().forEach(genre -> genreMap.put(genre.getCode(), genre.getGenre()));
-        Map<String, List<FavoriteAuthor>> favoriteAuthorsMap = favoriteAuthorService.getFavoriteAuthorsMap();
+        return new ImportContext(genreMap, favoriteAuthorService.getFavoriteAuthorsMap());
+    }
+
+    /**
+     * Преобразует батч книг в сущности для сохранения.
+     * Все вызовы в рамках одного импорта должны использовать один и тот же
+     * ImportContext — тогда ID и дедупликация авторов сквозные между батчами.
+     */
+    public BooksToSave toEntity(List<Book> books, ImportContext context) {
+        BooksToSave result = new BooksToSave();
         for (Book book : books) {
-            bookId = getSequence();
-            result.getBookEntities().add(toEntity(book, bookId, genreMap));
-            getAuthors(result.getBookAuthors(), result.getBookToAuthors(), result.getFavoriteAuthors(), favoriteAuthorsMap, book, bookId);
-            getBookGenres(result.getBookToGenres(), book, bookId, genreMap);
+            long bookId = context.nextId();
+            result.getBookEntities().add(toEntity(book, bookId, context.getGenreMap()));
+            getAuthors(result.getBookAuthors(), result.getBookToAuthors(), result.getFavoriteAuthors(), context, book, bookId);
+            getBookGenres(result.getBookToGenres(), book, bookId, context.getGenreMap());
         }
         return result;
     }
@@ -73,25 +82,28 @@ public class BookMapper {
     private void getAuthors(Map<String, BookAuthorEntity> bookAuthors,
                             List<BookToAuthor> bookToAuthors,
                             List<FavoriteAuthor> favoriteAuthors,
-                            Map<String, List<FavoriteAuthor>> favoriteAuthorsMap,
+                            ImportContext context,
                             Book book,
                             long bookId) {
         for (BookAuthor author : book.getAuthors()) {
             Long id = null;
             String fullName = replaceRussianLetters(author.getFullName());
 
-            if (!bookAuthors.containsKey(fullName)) {
-                id = getSequence();
-                bookAuthors.put(fullName,
-                        BookAuthorEntity.builder()
-                                .id(id)
-                                .lastName(replaceRussianLetters(author.getLastName()))
-                                .firstName(replaceRussianLetters(author.getFirstName()))
-                                .middleName(replaceRussianLetters(author.getMiddleName()))
-                                .fullName(fullName)
-                                .build());
+            BookAuthorEntity existing = context.getAuthorsByName().get(fullName);
+            if (existing == null) {
+                id = context.nextId();
+                existing = BookAuthorEntity.builder()
+                        .id(id)
+                        .lastName(replaceRussianLetters(author.getLastName()))
+                        .firstName(replaceRussianLetters(author.getFirstName()))
+                        .middleName(replaceRussianLetters(author.getMiddleName()))
+                        .fullName(fullName)
+                        .build();
+                context.getAuthorsByName().put(fullName, existing);
+                // В bookAuthors попадают только новые авторы батча — их и сохраняем
+                bookAuthors.put(fullName, existing);
             } else {
-                id = bookAuthors.get(fullName).getId();
+                id = existing.getId();
             }
             if (id != null) {
                 bookToAuthors.add(BookToAuthor.builder()
@@ -99,15 +111,15 @@ public class BookMapper {
                         .authorId(id)
                         .build());
 
-                if (favoriteAuthorsMap.containsKey(fullName)) {
+                if (context.getFavoriteAuthorsMap().containsKey(fullName)) {
                     boolean added = false;
-                    for (FavoriteAuthor fa : favoriteAuthorsMap.get(fullName)) {
+                    for (FavoriteAuthor fa : context.getFavoriteAuthorsMap().get(fullName)) {
                         fa.setBookAuthorId(id);
                         favoriteAuthors.add(fa);
                         added = true;
                     }
                     if (added) {
-                        favoriteAuthorsMap.remove(fullName);
+                        context.getFavoriteAuthorsMap().remove(fullName);
                     }
                 }
             }
@@ -153,22 +165,6 @@ public class BookMapper {
                 .additionalInfo(entity.getAdditionalInfo())
                 .archivePath(entity.getArchivePath())
                 .build();
-    }
-
-    private Long getSequence() {
-        return sequence++;
-    }
-
-    private Long getAuthorsSequence() {
-        return authorsSequence++;
-    }
-
-    private void resetSequence() {
-        sequence = 0L;
-    }
-
-    private void resetAuthorsSequence(Long initValue) {
-        authorsSequence = initValue;
     }
 
     /**
