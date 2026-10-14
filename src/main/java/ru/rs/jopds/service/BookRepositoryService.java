@@ -3,18 +3,12 @@ package ru.rs.jopds.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import ru.rs.jopds.repository.BookAuthorEntityRepository;
-import ru.rs.jopds.repository.BookRepository;
-import ru.rs.jopds.repository.BookToAuthorRepository;
-import ru.rs.jopds.repository.BookToGenreRepository;
 import ru.rs.jopds.repository.entity.BookAuthorEntity;
 import ru.rs.jopds.repository.entity.BookEntity;
 import ru.rs.jopds.repository.entity.BookToAuthor;
 import ru.rs.jopds.repository.entity.BookToGenre;
 
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
+import org.springframework.transaction.annotation.Transactional;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -22,50 +16,85 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 
+/**
+ * Запись каталога в БД на этапе импорта.
+ *
+ * Импорт идёт в staging-таблицы (*_staging), рабочие таблицы при этом
+ * не затрагиваются — пользователи до конца импорта видят старый каталог.
+ * В конце импорта таблицы меняются местами одной атомарной операцией
+ * RENAME TABLE (см. {@link #swapStagingTables()}): либо каталог заменён целиком,
+ * либо (при любом сбое) остался прежним — частично заполненного каталога не бывает.
+ *
+ * ВНИМАНИЕ: методы вставляют именно в staging-таблицы — это единственный
+ * путь записи каталога.
+ */
 @Slf4j
 @RequiredArgsConstructor
 @Service
 public class BookRepositoryService {
-    private final BookRepository bookRepository;
-    private final BookAuthorEntityRepository authorRepository;
-    private final BookToAuthorRepository bookToAuthorRepository;
-    private final BookToGenreRepository bookToGenreRepository;
+
+    /** Каталог: staging-таблица и её рабочая пара */
+    private static final String[][] CATALOG_TABLES = {
+            {"books_staging", "books"},
+            {"book_author_staging", "book_author"},
+            {"book_to_author_staging", "book_to_author"},
+            {"book_to_genre_staging", "book_to_genre"}
+    };
+
     private final DataSource dataSource;
 
-    @PersistenceContext
-    private EntityManager entityManager;
-
-    @Transactional()
-    public void clearAll() {
-        // Используем TRUNCATE для быстрой очистки (быстрее чем DELETE)
+    /**
+     * Пересоздаёт staging-таблицы по текущей схеме рабочих таблиц
+     * (CREATE TABLE ... LIKE копирует структуру и индексы, включая FULLTEXT).
+     * Остатки прошлого неудачного импорта отбрасываются.
+     */
+    @Transactional
+    public void prepareStagingTables() {
         try (Connection connection = dataSource.getConnection();
              Statement stmt = connection.createStatement()) {
-
-            connection.setAutoCommit(false);
-            // Отключаем проверку внешних ключей для быстрой очистки
-            stmt.execute("SET FOREIGN_KEY_CHECKS = 0");
-            stmt.execute("TRUNCATE TABLE book_to_author");
-            stmt.execute("TRUNCATE TABLE book_author");
-            stmt.execute("TRUNCATE TABLE books");
-            stmt.execute("TRUNCATE TABLE book_to_genre");
-            stmt.execute("SET FOREIGN_KEY_CHECKS = 1");
-            connection.commit();
-            connection.setAutoCommit(true);
-            log.info("Таблицы очищены с использованием TRUNCATE");
+            for (String[] tables : CATALOG_TABLES) {
+                stmt.execute("DROP TABLE IF EXISTS " + tables[0]);
+                stmt.execute("CREATE TABLE " + tables[0] + " LIKE " + tables[1]);
+            }
+            log.info("Staging-таблицы подготовлены ({} шт.)", CATALOG_TABLES.length);
         } catch (SQLException e) {
-            log.warn("Не удалось использовать TRUNCATE, используем DELETE: {}", e.getMessage());
-            // Fallback на обычное удаление
-            bookToAuthorRepository.deleteAll();
-            authorRepository.deleteAll();
-            bookRepository.deleteAll();
-            bookToGenreRepository.deleteAll();
-            entityManager.flush();
+            throw new RuntimeException("Не удалось подготовить staging-таблицы: " + e.getMessage(), e);
         }
     }
 
+    /**
+     * Атомарно заменяет рабочие таблицы таблицами staging и удаляет старые.
+     * RENAME TABLE с несколькими таблицами выполняется как одна операция:
+     * между «старый каталог» и «новый каталог» нет промежуточного состояния.
+     * До этого момента рабочие таблицы не были затронуты, поэтому при сбое
+     * импорта (или этого RENAME) откат не нужен — просто остаётся старый каталог.
+     */
+    @Transactional
+    public void swapStagingTables() {
+        try (Connection connection = dataSource.getConnection();
+             Statement stmt = connection.createStatement()) {
+            // На случай остатков прошлого обмена
+            dropOldTables(stmt);
+            stmt.execute("RENAME TABLE " +
+                    "books TO books_old, books_staging TO books, " +
+                    "book_author TO book_author_old, book_author_staging TO book_author, " +
+                    "book_to_author TO book_to_author_old, book_to_author_staging TO book_to_author, " +
+                    "book_to_genre TO book_to_genre_old, book_to_genre_staging TO book_to_genre");
+            dropOldTables(stmt);
+            log.info("Рабочие таблицы заменены на staging (атомарный RENAME TABLE)");
+        } catch (SQLException e) {
+            throw new RuntimeException("Не удалось заменить рабочие таблицы: " + e.getMessage(), e);
+        }
+    }
+
+    private void dropOldTables(Statement stmt) throws SQLException {
+        stmt.execute("SET FOREIGN_KEY_CHECKS = 0");
+        stmt.execute("DROP TABLE IF EXISTS books_old, book_author_old, book_to_author_old, book_to_genre_old");
+        stmt.execute("SET FOREIGN_KEY_CHECKS = 1");
+    }
 
     /**
-     * Сохраняет список книг батчами с оптимизацией памяти (использует нативный JDBC batch insert)
+     * Сохраняет список книг батчами в books_staging (нативный JDBC batch insert)
      */
     @Transactional
     public void saveInBatches(List<BookEntity> entities, int batchSize, String entityName) {
@@ -76,9 +105,8 @@ public class BookRepositoryService {
         int total = entities.size();
         log.info("Начинаем сохранение {} {} с использованием JDBC batch insert", total, entityName);
 
-        // Используем простой INSERT без ON DUPLICATE KEY для максимальной скорости
-        // (так как мы очистили таблицу перед вставкой)
-        String sql = "INSERT INTO books (id, title, authors_string, series, series_number, genres_string, " +
+        // Простой INSERT: staging-таблица всегда пустая к началу вставки
+        String sql = "INSERT INTO books_staging (id, title, authors_string, series, series_number, genres_string, " +
                 "language, format, file_size, date, file_path, additional_info, archive_path) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
@@ -125,7 +153,7 @@ public class BookRepositoryService {
     }
 
     /**
-     * Сохраняет список авторов батчами с оптимизацией памяти (использует нативный JDBC batch insert)
+     * Сохраняет список авторов батчами в book_author_staging (нативный JDBC batch insert)
      */
     @Transactional
     public void saveAuthorsInBatches(List<BookAuthorEntity> entities, int batchSize) {
@@ -136,8 +164,7 @@ public class BookRepositoryService {
         int total = entities.size();
         log.info("Начинаем сохранение {} авторов с использованием JDBC batch insert", total);
 
-        // Используем простой INSERT без ON DUPLICATE KEY для максимальной скорости
-        String sql = "INSERT INTO book_author (id, last_name, first_name, middle_name, full_name) " +
+        String sql = "INSERT INTO book_author_staging (id, last_name, first_name, middle_name, full_name) " +
                 "VALUES (?, ?, ?, ?, ?)";
 
         try (Connection connection = dataSource.getConnection();
@@ -175,7 +202,7 @@ public class BookRepositoryService {
     }
 
     /**
-     * Сохраняет список связей книг и авторов батчами с оптимизацией памяти (использует нативный JDBC batch insert)
+     * Сохраняет список связей книг и авторов батчами в book_to_author_staging (нативный JDBC batch insert)
      */
     @Transactional
     public void saveBookToAuthorInBatches(List<BookToAuthor> entities, int batchSize) {
@@ -186,7 +213,7 @@ public class BookRepositoryService {
         int total = entities.size();
         log.info("Начинаем сохранение {} связей с использованием JDBC batch insert", total);
 
-        String sql = "INSERT INTO book_to_author (book_id, author_id) VALUES (?, ?)";
+        String sql = "INSERT INTO book_to_author_staging (book_id, author_id) VALUES (?, ?)";
 
         try (Connection connection = dataSource.getConnection();
              PreparedStatement ps = connection.prepareStatement(sql)) {
@@ -220,7 +247,7 @@ public class BookRepositoryService {
     }
 
     /**
-     * Сохраняет список связей книг и жанров батчами с оптимизацией памяти (использует нативный JDBC batch insert)
+     * Сохраняет список связей книг и жанров батчами в book_to_genre_staging (нативный JDBC batch insert)
      */
     @Transactional
     public void saveBookToGenreInBatches(List<BookToGenre> entities, int batchSize) {
@@ -228,11 +255,10 @@ public class BookRepositoryService {
             return;
         }
 
-
         int total = entities.size();
         log.info("Начинаем сохранение {} связей с использованием JDBC batch insert", total);
 
-        String sql = "INSERT INTO book_to_genre (book_id, genre_id) VALUES (?, ?)";
+        String sql = "INSERT INTO book_to_genre_staging (book_id, genre_id) VALUES (?, ?)";
 
         try (Connection connection = dataSource.getConnection();
              PreparedStatement ps = connection.prepareStatement(sql)) {

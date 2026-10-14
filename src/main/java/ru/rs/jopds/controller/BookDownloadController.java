@@ -438,6 +438,15 @@ public class BookDownloadController {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setNamespaceAware(true);
             factory.setIgnoringElementContentWhitespace(false);
+            // Защита от XXE: содержимое fb2 — недоверенный XML (файлы из библиотечных
+            // архивов). Запрещаем DOCTYPE и внешние сущности — легитимный fb2 их
+            // не использует, а без этого злой файл мог бы читать локальные файлы
+            // (file://) или ходить по сети (http://) через сущности
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
             DocumentBuilder builder = factory.newDocumentBuilder();
             
             // Парсим XML

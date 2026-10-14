@@ -63,7 +63,7 @@ public class InpxImportService {
                 total[0] += batch.size();
                 log.info("Сохранён батч: {} книг (всего: {})", batch.size(), total[0]);
             }, IMPORT_BATCH_SIZE);
-            bookService.finishImport(total[0], statusFilePath);
+            bookService.finishImport(context, total[0], statusFilePath);
 
             log.info("Фоновое сканирование завершено: {} книг за {} минут", total[0],
                     (System.currentTimeMillis() - startTime) / 60000);
