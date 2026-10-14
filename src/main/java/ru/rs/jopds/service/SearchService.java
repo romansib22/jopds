@@ -28,6 +28,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SearchService {
 
+    /**
+     * Минимальная длина токена FULLTEXT-индекса InnoDB (innodb_ft_min_token_size).
+     * Запросы с более короткими словами через MATCH не находятся — для них LIKE-fallback.
+     */
+    private static final int FULLTEXT_MIN_TOKEN = 3;
+
     private final BookRepository bookRepository;
     private final BookAuthorEntityRepository authorRepository;
     private final BookMapper bookMapper;
@@ -71,8 +77,13 @@ public class SearchService {
         if (queryWords.length == 1) {
             //Поиск по фамилии
             if (fuzzySearch) {
-                // Нестрогий поиск
-                matchingResults = authorRepository.findByFFuzzy(queryWords[0]);
+                // Нестрогий поиск: FULLTEXT для слов >= 3 символов, LIKE-fallback для коротких
+                String boolQuery = toBooleanPrefixQuery(queryWords[0]);
+                if (boolQuery != null) {
+                    matchingResults = authorRepository.findByFFulltext(boolQuery);
+                } else {
+                    matchingResults = authorRepository.findByFFuzzy(queryWords[0]);
+                }
             } else {
                 matchingResults = authorRepository.findByF(queryWords[0]);
             }
@@ -250,8 +261,14 @@ public class SearchService {
         List<BookEntity> entities;
 
         if (fuzzySearch) {
-            // Нестрогий поиск - ищем подстроку
-            entities = bookRepository.findByTitleContainingIgnoreCase(query);
+            // Нестрогий поиск: FULLTEXT для слов >= 3 символов (без полного скана таблицы),
+            // LIKE-fallback для коротких запросов
+            String boolQuery = toBooleanPrefixQuery(query);
+            if (boolQuery != null) {
+                entities = bookRepository.searchByTitleFulltext(boolQuery);
+            } else {
+                entities = bookRepository.findByTitleContainingIgnoreCase(query);
+            }
         } else {
             // Строгий поиск - ищем точное совпадение
             entities = bookRepository.findByTitleIgnoreCase(query);
@@ -315,9 +332,31 @@ public class SearchService {
                 .filter(book -> userSettingsService.shouldSearchLanguage(langSettings, book.getLanguage()))
                 .collect(Collectors.toList());
 
-        log.debug("Найдено {} книг избранных авторов для пользователя {} с датой >= {}", 
+        log.debug("Найдено {} книг избранных авторов для пользователя {} с датой >= {}",
                 matchingBooks.size(), username, minDate);
         return bookMapper.toBookList(matchingBooks);
+    }
+
+    /**
+     * Преобразует поисковый запрос в boolean-выражение FULLTEXT: '+слово1* +слово2*'
+     * (все слова обязательны, префиксное совпадение — ближе всего к бывшему LIKE '%слово%').
+     * Слова короче FULLTEXT_MIN_TOKEN и спецсимволы boolean-режима отбрасываются.
+     *
+     * @return boolean-запрос или null, если не осталось ни одного подходящего слова (нужен LIKE-fallback)
+     */
+    private String toBooleanPrefixQuery(String query) {
+        String[] words = query.trim().toLowerCase().split("\\s+");
+        StringBuilder sb = new StringBuilder();
+        for (String word : words) {
+            String clean = word.replaceAll("[+\\-<>\\(\\)~*\"@]", "");
+            if (clean.length() >= FULLTEXT_MIN_TOKEN) {
+                if (sb.length() > 0) {
+                    sb.append(' ');
+                }
+                sb.append('+').append(clean).append('*');
+            }
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
 }
