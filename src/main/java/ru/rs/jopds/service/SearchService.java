@@ -14,7 +14,10 @@ import ru.rs.jopds.repository.entity.UserSettings;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -150,6 +153,38 @@ public class SearchService {
                         .fullName(entity.getFullName())
                         .build())
                 .orElse(null);
+    }
+
+    /**
+     * Получает ID авторов по списку полных имён одним запросом (анти-N+1)
+     */
+    public Map<String, Long> getAuthorIdMapByFullNames(Collection<String> fullNames) {
+        if (fullNames == null || fullNames.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        return authorRepository.findByFullNameIn(fullNames).stream()
+                .collect(Collectors.toMap(BookAuthorEntity::getFullName, BookAuthorEntity::getId, (a, b) -> a));
+    }
+
+    /**
+     * Получает авторов по списку полных имён одним запросом (анти-N+1)
+     */
+    public Map<String, BookAuthor> getAuthorsByFullNames(Collection<String> fullNames) {
+        if (fullNames == null || fullNames.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        return authorRepository.findByFullNameIn(fullNames).stream()
+                .collect(Collectors.toMap(BookAuthorEntity::getFullName,
+                        entity -> BookAuthor.builder()
+                                .authorId(entity.getId())
+                                .firstName(entity.getFirstName())
+                                .lastName(entity.getLastName())
+                                .middleName(entity.getMiddleName())
+                                .fullName(entity.getFullName())
+                                .build(),
+                        (a, b) -> a));
     }
 
     /**
