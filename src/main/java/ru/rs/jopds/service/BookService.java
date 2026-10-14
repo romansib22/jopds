@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.rs.jopds.mapper.BookMapper;
 import ru.rs.jopds.model.Book;
 import ru.rs.jopds.model.BooksToSave;
+import ru.rs.jopds.model.ImportContext;
 import ru.rs.jopds.repository.BookRepository;
 import ru.rs.jopds.repository.FavoriteAuthorRepository;
 import ru.rs.jopds.repository.ScanResultRepository;
@@ -20,6 +21,7 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,65 +42,53 @@ public class BookService {
 
 
     /**
-     * Сохраняет список книг в БД (очищает старые данные)
+     * Начинает импорт каталога: очищает старые данные и готовит контекст
+     * (карта жанров и избранных авторов загружаются один раз на весь импорт).
+     * Возвращает контекст, который нужно передавать в каждый saveBookBatch.
      */
-    @Transactional
-    public void saveAllBooks(List<Book> books) {
-        saveAllBooks(books, null);
+    public ImportContext startImport() {
+        long startTime = System.currentTimeMillis();
+        bookRepositoryService.clearAll();
+        log.info("Старые данные очищены за {} мс", System.currentTimeMillis() - startTime);
+        return bookMapper.createImportContext();
     }
 
     /**
-     * Сохраняет список книг в БД (очищает старые данные) с указанием пути к файлу
+     * Сохраняет один батч книг в рамках импорта (стриминговый импорт:
+     * весь каталог никогда не находится в памяти целиком).
+     * Каждый батч — самостоятельный набор JDBC-вставок.
      */
-    @Transactional
-    public void saveAllBooks(List<Book> books, String filePath) {
-        log.info("Сохранение {} книг в БД", books.size());
-        long startTime = System.currentTimeMillis();
-        // Очищаем старые данные
-        bookRepositoryService.clearAll();
-        log.info("Старые данные очищены");
-        log.info("Сохранение:");
-        // Преобразуем в entity и сохраняем
-        log.info("  1. Генерируем сущности для сохранения...");
-        BooksToSave entities = bookMapper.toEntity(books);
+    public void saveBookBatch(List<Book> batch, ImportContext context) {
+        BooksToSave entities = bookMapper.toEntity(batch, context);
 
-        // Отключаем индексы перед вставкой для ускорения (только для MySQL)
-        disableIndexesForInsert();
-
-        // Сохраняем книги с batch insert (увеличенный batch size для MySQL)
-        log.info("  2. Сохраняем книги (JDBC batch insert, batch size: 5000)...");
         bookRepositoryService.saveInBatches(entities.getBookEntities(), 5000, "книг");
 
-        // Сохраняем авторов с batch insert
-        log.info("  3. Сохраняем авторов (JDBC batch insert, batch size: 5000)...");
-        List<BookAuthorEntity> authorsList = new java.util.ArrayList<>(entities.getBookAuthors().values());
-        bookRepositoryService.saveAuthorsInBatches(authorsList, 5000);
+        List<BookAuthorEntity> authorsList = new ArrayList<>(entities.getBookAuthors().values());
+        if (!authorsList.isEmpty()) {
+            bookRepositoryService.saveAuthorsInBatches(authorsList, 5000);
+        }
 
-        // Сохраняем связи книг и авторов с batch insert
-        log.info("  4. Сохраняем связи книг и авторов (JDBC batch insert, batch size: 5000)...");
-        bookRepositoryService.saveBookToAuthorInBatches(entities.getBookToAuthors(), 5000);
+        if (!entities.getBookToAuthors().isEmpty()) {
+            bookRepositoryService.saveBookToAuthorInBatches(entities.getBookToAuthors(), 5000);
+        }
 
-        // Сохраняем связи книг и жанров с batch insert
-        log.info("  5. Сохраняем связи книг и жанров (JDBC batch insert, batch size: 5000)...");
-        bookRepositoryService.saveBookToGenreInBatches(entities.getBookToGenres(), 5000);
+        if (!entities.getBookToGenres().isEmpty()) {
+            bookRepositoryService.saveBookToGenreInBatches(entities.getBookToGenres(), 5000);
+        }
 
-        // Обновляем идентификаторы авторов в списках избранных авторов
-        log.info("  6. Обновляем идентификаторы авторов в списках избранных авторов...");
-        favoriteAuthorRepository.saveAll(entities.getFavoriteAuthors());
+        // Переназначенные ID избранных авторов сохраняем по мере появления в батчах
+        if (!entities.getFavoriteAuthors().isEmpty()) {
+            favoriteAuthorRepository.saveAll(entities.getFavoriteAuthors());
+        }
+    }
 
-        // Включаем индексы обратно
-        enableIndexesAfterInsert();
-
-        log.info("Сохранение завершено: {} книг", entities.getBookEntities().size());
-
-        log.info("Создаем индексы");
-        // Создаем индексы после сохранения книг
+    /**
+     * Завершает импорт: создаёт недостающие индексы и фиксирует результат сканирования
+     */
+    @Transactional
+    public void finishImport(long bookCount, String filePath) {
         createIndexesIfNotExist();
-
-        // Сохраняем результат сканирования
-        log.info("Сохраняем результат сканирования");
-        saveScanResult(entities.getBookEntities().size(), filePath);
-        log.info("Сканирование завершено за {} минут", (System.currentTimeMillis() - startTime) / 60000);
+        saveScanResult(bookCount, filePath);
     }
 
     /**
@@ -121,35 +111,6 @@ public class BookService {
      */
     public Optional<ScanResult> getLatestScanResult() {
         return scanResultRepository.findFirstByOrderByScanDateDesc();
-    }
-
-    /**
-     * Отключает проверки перед массовой вставкой (оптимизация для MySQL)
-     */
-    private void disableIndexesForInsert() {
-        try (Connection connection = dataSource.getConnection();
-             Statement stmt = connection.createStatement()) {
-            // Для InnoDB нельзя отключить индексы, но можно оптимизировать настройки
-            stmt.execute("SET unique_checks = 0");
-            stmt.execute("SET foreign_key_checks = 0");
-            log.debug("Оптимизированы настройки MySQL для массовой вставки");
-        } catch (Exception e) {
-            log.debug("Не удалось оптимизировать настройки MySQL: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * Включает проверки обратно после массовой вставки
-     */
-    private void enableIndexesAfterInsert() {
-        try (Connection connection = dataSource.getConnection();
-             Statement stmt = connection.createStatement()) {
-            stmt.execute("SET unique_checks = 1");
-            stmt.execute("SET foreign_key_checks = 1");
-            log.debug("Восстановлены настройки MySQL");
-        } catch (Exception e) {
-            log.debug("Не удалось восстановить настройки MySQL: {}", e.getMessage());
-        }
     }
 
     /**
