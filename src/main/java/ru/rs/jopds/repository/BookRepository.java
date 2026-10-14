@@ -50,6 +50,14 @@ public interface BookRepository extends JpaRepository<BookEntity, Long> {
     List<BookEntity> searchByTitleOrAuthor(@Param("query") String query);
 
     /**
+     * Нечеткий поиск книг по названию через FULLTEXT-индекс (без полного скана таблицы).
+     * Запрос в boolean-режиме: '+слово1* +слово2*' (все слова, префиксное совпадение).
+     */
+    @Query(value = "SELECT * FROM books WHERE MATCH(title) AGAINST (:query IN BOOLEAN MODE)",
+            nativeQuery = true)
+    List<BookEntity> searchByTitleFulltext(@Param("query") String query);
+
+    /**
      * Поиск книг по серии (нечеткий поиск)
      */
     List<BookEntity> findBySeriesContainingIgnoreCase(String series);

@@ -48,6 +48,19 @@ public interface BookAuthorEntityRepository extends JpaRepository<BookAuthorEnti
     List<Object[]> findByFFuzzy(String lastName);
 
     /**
+     * Нестрогий поиск авторов по фамилии через FULLTEXT-индекс (без полного скана таблицы).
+     * Запрос в boolean-режиме: '+фамилия*' (префиксное совпадение).
+     */
+    String SQL_FIND_BY_F_FULLTEXT = "SELECT a.id, a.first_name, a.last_name, a.middle_name, a.full_name, count(bta.book_id) book_count\n" +
+            "  FROM book_author a\n" +
+            "  JOIN book_to_author bta ON bta.author_id = a.id\n" +
+            " WHERE MATCH(a.last_name) AGAINST (?1 IN BOOLEAN MODE)\n" +
+            " GROUP BY a.id, a.first_name, a.last_name, a.middle_name, a.full_name";
+
+    @Query(value = SQL_FIND_BY_F_FULLTEXT, nativeQuery = true)
+    List<Object[]> findByFFulltext(String query);
+
+    /**
      * Строгий поиск авторов по имени и фамилии
      * Возвращает: id, first_name, last_name, middle_name, full_name, book_count
      */
