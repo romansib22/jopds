@@ -120,7 +120,7 @@ public class BookService {
     }
 
     /**
-     * Создает индексы по полям title, authors_json, series если они не существуют
+     * Создает индексы по полям таблиц каталога, если они не существуют
      */
     @Transactional
     public void createIndexesIfNotExist() {
@@ -149,37 +149,10 @@ public class BookService {
                 log.info("Индекс idx_series создан");
             }
 
-            // Индекс по authors_json (для TEXT нужен префикс или FULLTEXT)
-            if (!indexExists(metaData, "books", "idx_authors_json")) {
-                try {
-                    // Пробуем создать FULLTEXT индекс для MySQL
-                    statement.execute("CREATE FULLTEXT INDEX idx_authors_json ON books(authors_json)");
-                    log.info("FULLTEXT индекс idx_authors_json создан");
-                } catch (Exception e) {
-                    // Если не поддерживается, создаем обычный индекс с префиксом
-                    log.debug("Не удалось создать FULLTEXT индекс, пробуем обычный: {}", e.getMessage());
-                }
-            }
-
-            // Индекс по author_last_names
-            if (!indexExists(metaData, "books", "idx_author_last_names")) {
-                try {
-                    statement.execute("CREATE FULLTEXT INDEX idx_author_last_names ON books(author_last_names)");
-                    log.info("FULLTEXT индекс idx_author_last_names создан");
-                } catch (Exception e) {
-                    log.debug("Не удалось создать FULLTEXT индекс: {}", e.getMessage());
-                }
-            }
-
-            // Индекс по author_first_names
-            if (!indexExists(metaData, "books", "idx_author_first_names")) {
-                try {
-                    statement.execute("CREATE FULLTEXT INDEX idx_author_first_names ON books(author_first_names)");
-                    log.info("FULLTEXT индекс idx_author_first_names создан");
-                } catch (Exception e) {
-                    log.debug("Не удалось создать FULLTEXT индекс: {}", e.getMessage());
-                }
-            }
+            // (Индексы idx_authors_json / idx_author_last_names / idx_author_first_names
+            // удалены: колонок authors_json, author_last_names, author_first_names
+            // в текущей схеме нет — DDL падал на каждом импорте с
+            // "Key column ... doesn't exist in table")
 
             // Индекс по language
             if (!indexExists(metaData, "books", "idx_language")) {
