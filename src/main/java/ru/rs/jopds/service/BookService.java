@@ -42,19 +42,20 @@ public class BookService {
 
 
     /**
-     * Начинает импорт каталога: очищает старые данные и готовит контекст
-     * (карта жанров и избранных авторов загружаются один раз на весь импорт).
+     * Начинает импорт каталога: готовит staging-таблицы (рабочие таблицы
+     * не трогаются — до конца импорта читатели видят старый каталог)
+     * и контекст импорта (карта жанров и избранных авторов загружаются один раз).
      * Возвращает контекст, который нужно передавать в каждый saveBookBatch.
      */
     public ImportContext startImport() {
         long startTime = System.currentTimeMillis();
-        bookRepositoryService.clearAll();
-        log.info("Старые данные очищены за {} мс", System.currentTimeMillis() - startTime);
+        bookRepositoryService.prepareStagingTables();
+        log.info("Staging-таблицы подготовлены за {} мс", System.currentTimeMillis() - startTime);
         return bookMapper.createImportContext();
     }
 
     /**
-     * Сохраняет один батч книг в рамках импорта (стриминговый импорт:
+     * Сохраняет один батч книг в staging-таблицы (стриминговый импорт:
      * весь каталог никогда не находится в памяти целиком).
      * Каждый батч — самостоятельный набор JDBC-вставок.
      */
@@ -76,17 +77,22 @@ public class BookService {
             bookRepositoryService.saveBookToGenreInBatches(entities.getBookToGenres(), 5000);
         }
 
-        // Переназначенные ID избранных авторов сохраняем по мере появления в батчах
-        if (!entities.getFavoriteAuthors().isEmpty()) {
-            favoriteAuthorRepository.saveAll(entities.getFavoriteAuthors());
-        }
+        // Избранные авторы НЕ обновляются здесь: их ID переназначаются только
+        // после успешной замены таблиц (см. finishImport) — при сбое импорта
+        // избранное продолжает указывать на авторов старого каталога
     }
 
     /**
-     * Завершает импорт: создаёт недостающие индексы и фиксирует результат сканирования
+     * Завершает импорт: атомарно заменяет рабочие таблицы на staging,
+     * переназначает избранное на новые ID авторов, создаёт недостающие
+     * индексы и фиксирует результат сканирования.
      */
     @Transactional
-    public void finishImport(long bookCount, String filePath) {
+    public void finishImport(ImportContext context, long bookCount, String filePath) {
+        bookRepositoryService.swapStagingTables();
+        if (!context.getRemappedFavorites().isEmpty()) {
+            favoriteAuthorRepository.saveAll(context.getRemappedFavorites());
+        }
         createIndexesIfNotExist();
         saveScanResult(bookCount, filePath);
     }

@@ -43,7 +43,7 @@ public class BookMapper {
         for (Book book : books) {
             long bookId = context.nextId();
             result.getBookEntities().add(toEntity(book, bookId, context.getGenreMap()));
-            getAuthors(result.getBookAuthors(), result.getBookToAuthors(), result.getFavoriteAuthors(), context, book, bookId);
+            getAuthors(result.getBookAuthors(), result.getBookToAuthors(), context, book, bookId);
             getBookGenres(result.getBookToGenres(), book, bookId, context.getGenreMap());
         }
         return result;
@@ -81,7 +81,6 @@ public class BookMapper {
 
     private void getAuthors(Map<String, BookAuthorEntity> bookAuthors,
                             List<BookToAuthor> bookToAuthors,
-                            List<FavoriteAuthor> favoriteAuthors,
                             ImportContext context,
                             Book book,
                             long bookId) {
@@ -111,11 +110,13 @@ public class BookMapper {
                         .authorId(id)
                         .build());
 
+                // Переназначенные избранные копятся в контексте — сохраняются один раз
+                // в конце импорта, после атомарной замены таблиц
                 if (context.getFavoriteAuthorsMap().containsKey(fullName)) {
                     boolean added = false;
                     for (FavoriteAuthor fa : context.getFavoriteAuthorsMap().get(fullName)) {
                         fa.setBookAuthorId(id);
-                        favoriteAuthors.add(fa);
+                        context.getRemappedFavorites().add(fa);
                         added = true;
                     }
                     if (added) {

@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import ru.rs.jopds.repository.entity.BookAuthorEntity;
 import ru.rs.jopds.repository.entity.FavoriteAuthor;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,14 @@ public class ImportContext {
 
     /** Дедупликация авторов по нормализованному full_name (ё → е) в рамках одного импорта */
     private final Map<String, BookAuthorEntity> authorsByName = new HashMap<>();
+
+    /**
+     * Избранные авторы с переназначенными на новые ID авторов.
+     * Копятся здесь, а не в BooksToSave: сохраняются один раз в конце импорта,
+     * уже ПОСЛЕ атомарной замены таблиц — при сбое импорта избранное
+     * не должно указывать на авторов нового (незавершённого) каталога
+     */
+    private final List<FavoriteAuthor> remappedFavorites = new ArrayList<>();
 
     /** Единая последовательность ID для книг и авторов (как в исходной реализации) */
     private long sequence = 0L;
