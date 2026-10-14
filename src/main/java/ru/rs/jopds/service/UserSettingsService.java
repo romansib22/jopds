@@ -65,13 +65,23 @@ public class UserSettingsService {
             // Если пользователь не аутентифицирован, показываем все языки
             return true;
         }
-        
-        UserSettings settings = getSettings(userLogin)
-            .orElse(UserSettings.builder()
-                .searchRussian(true)
-                .searchEnglish(true)
-                .searchOtherLanguages(true)
-                .build());
+
+        UserSettings settings = getSettings(userLogin).orElse(null);
+
+        return shouldSearchLanguage(settings, language);
+    }
+
+    /**
+     * Проверяет, должен ли язык быть включен в поиск, по заранее полученным настройкам.
+     * Позволяет не запрашивать настройки из БД на каждую проверку (N+1 при фильтрации списка книг).
+     *
+     * @param settings настройки пользователя или null (нет записи — все языки включены, как и раньше)
+     */
+    public boolean shouldSearchLanguage(UserSettings settings, String language) {
+        if (settings == null) {
+            // Нет записи настроек — дефолт: включены все языки
+            return true;
+        }
         
         if (language == null || language.trim().isEmpty()) {
             return settings.getSearchOtherLanguages() != null && settings.getSearchOtherLanguages();

@@ -10,6 +10,7 @@ import ru.rs.jopds.repository.BookAuthorEntityRepository;
 import ru.rs.jopds.repository.BookRepository;
 import ru.rs.jopds.repository.entity.BookAuthorEntity;
 import ru.rs.jopds.repository.entity.BookEntity;
+import ru.rs.jopds.repository.entity.UserSettings;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -162,15 +163,14 @@ public class SearchService {
         // Получаем все книги автора
         List<BookEntity> allBooks = bookRepository.findBooksByAuthorId(authorId);
 
+        // Настройки языков получаем один раз, а не на каждую книгу (анти-N+1)
+        UserSettings langSettings = userLogin != null
+                ? userSettingsService.getSettings(userLogin).orElse(null)
+                : null;
+
         // Фильтруем книги по языку
         List<BookEntity> matchingBooks = allBooks.stream()
-                .filter(book -> {
-                    // Проверяем фильтр языка
-                    if (userLogin != null && !userSettingsService.shouldSearchLanguage(userLogin, book.getLanguage())) {
-                        return false;
-                    }
-                    return true;
-                })
+                .filter(book -> userSettingsService.shouldSearchLanguage(langSettings, book.getLanguage()))
                 .collect(Collectors.toList());
 
         log.debug("Найдено {} книг для автора с ID {}", matchingBooks.size(), authorId);
@@ -188,15 +188,14 @@ public class SearchService {
         // Получаем все книги автора и серии
         List<BookEntity> allBooks = bookRepository.findBooksByAuthorIdAndSeries(authorId, series.trim());
 
+        // Настройки языков получаем один раз, а не на каждую книгу (анти-N+1)
+        UserSettings langSettings = userLogin != null
+                ? userSettingsService.getSettings(userLogin).orElse(null)
+                : null;
+
         // Фильтруем книги по языку
         List<BookEntity> matchingBooks = allBooks.stream()
-                .filter(book -> {
-                    // Проверяем фильтр языка
-                    if (userLogin != null && !userSettingsService.shouldSearchLanguage(userLogin, book.getLanguage())) {
-                        return false;
-                    }
-                    return true;
-                })
+                .filter(book -> userSettingsService.shouldSearchLanguage(langSettings, book.getLanguage()))
                 .collect(Collectors.toList());
 
         log.debug("Найдено {} книг для автора с ID {} и серии '{}'", matchingBooks.size(), authorId, series);
@@ -222,10 +221,11 @@ public class SearchService {
             // Строгий поиск - ищем точное совпадение
             entities = bookRepository.findByTitleIgnoreCase(query);
         }
-        // Применяем фильтр языков
+        // Применяем фильтр языков (настройки получаем один раз, а не на каждую книгу)
         if (userLogin != null) {
+            UserSettings langSettings = userSettingsService.getSettings(userLogin).orElse(null);
             entities = entities.stream()
-                    .filter(book -> userSettingsService.shouldSearchLanguage(userLogin, book.getLanguage()))
+                    .filter(book -> userSettingsService.shouldSearchLanguage(langSettings, book.getLanguage()))
                     .collect(Collectors.toList());
         }
 
@@ -251,10 +251,11 @@ public class SearchService {
             entities = bookRepository.findBySeriesIgnoreCase(query);
         }
 
-        // Применяем фильтр языков
+        // Применяем фильтр языков (настройки получаем один раз, а не на каждую книгу)
         if (userLogin != null) {
+            UserSettings langSettings = userSettingsService.getSettings(userLogin).orElse(null);
             entities = entities.stream()
-                    .filter(book -> userSettingsService.shouldSearchLanguage(userLogin, book.getLanguage()))
+                    .filter(book -> userSettingsService.shouldSearchLanguage(langSettings, book.getLanguage()))
                     .collect(Collectors.toList());
         }
         return bookMapper.toBookList(entities);
@@ -271,15 +272,12 @@ public class SearchService {
         // Получаем все книги избранных авторов с датой >= minDate
         List<BookEntity> allBooks = bookRepository.findBooksByFavoriteAuthorsAndDate(username.trim(), minDate);
 
+        // Настройки языков получаем один раз, а не на каждую книгу (анти-N+1)
+        UserSettings langSettings = userSettingsService.getSettings(username.trim()).orElse(null);
+
         // Фильтруем книги по языку
         List<BookEntity> matchingBooks = allBooks.stream()
-                .filter(book -> {
-                    // Проверяем фильтр языка
-                    if (!userSettingsService.shouldSearchLanguage(username, book.getLanguage())) {
-                        return false;
-                    }
-                    return true;
-                })
+                .filter(book -> userSettingsService.shouldSearchLanguage(langSettings, book.getLanguage()))
                 .collect(Collectors.toList());
 
         log.debug("Найдено {} книг избранных авторов для пользователя {} с датой >= {}", 
