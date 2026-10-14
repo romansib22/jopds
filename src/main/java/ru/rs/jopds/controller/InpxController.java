@@ -63,7 +63,15 @@ public class InpxController {
         }
 
         String filePath = inpxProperties.getFilePath();
-        inpxImportService.importCatalogAsync(filePath);
+        try {
+            inpxImportService.importCatalogAsync(filePath);
+        } catch (Exception e) {
+            // Фоновая задача не стартовала (например, исполнитель отклонил её) — освобождаем флаг,
+            // иначе isScanning останется true и все последующие запуски будут получать 409 до рестарта
+            scanStatusService.completeError("Не удалось запустить сканирование: " + e.getMessage());
+            return ResponseEntity.internalServerError()
+                .body("Не удалось запустить сканирование: " + e.getMessage());
+        }
         return ResponseEntity.accepted()
             .body("Сканирование запущено. Дождитесь завершения.");
     }
@@ -96,20 +104,39 @@ public class InpxController {
     }
     
     /**
-     * Читает INPX файл из указанной директории и сохраняет каталог книг в БД
+     * Читает INPX файл из указанной директории и сохраняет каталог книг в БД.
+     * Импорт выполняется в фоне (как у /import): запрос сразу возвращается с 202,
+     * прогресс и ошибки — через /api/inpx/import/status.
      */
     @PostMapping("/import-from-path")
     public ResponseEntity<String> importFromPath(
             @RequestParam String directoryPath,
             @RequestParam(required = false) String fileName) {
-        try {
-            List<Book> books = inpxReaderService.readInpxFile(directoryPath, fileName);
-            bookService.saveAllBooks(books);
-            return ResponseEntity.ok("Импортировано книг: " + books.size());
-        } catch (Exception e) {
+        // Валидируем параметры до захвата флага сканирования
+        if (directoryPath == null || directoryPath.trim().isEmpty()) {
             return ResponseEntity.badRequest()
-                .body("Ошибка при импорте: " + e.getMessage());
+                .body("Не указан путь к директории с INPX-файлом");
         }
+
+        // Guard: не даём второму импорту гоняться с уже идущим
+        // (раньше эндпоинт выполнял импорт синхронно в HTTP-потоке и мог
+        // пересечься с фоновым: два TRUNCATE+INSERT портили каталог)
+        if (!scanStatusService.tryStartScan()) {
+            return ResponseEntity.status(409) // Conflict
+                .body("Сканирование уже выполняется. Пожалуйста, подождите.");
+        }
+
+        try {
+            inpxImportService.importCatalogFromDirAsync(directoryPath.trim(), fileName);
+        } catch (Exception e) {
+            // Задача не стартовала — освобождаем флаг сканирования
+            scanStatusService.completeError("Не удалось запустить сканирование: " + e.getMessage());
+            return ResponseEntity.internalServerError()
+                .body("Не удалось запустить сканирование: " + e.getMessage());
+        }
+
+        return ResponseEntity.accepted()
+            .body("Сканирование запущено. Дождитесь завершения.");
     }
     
     /**

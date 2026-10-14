@@ -33,4 +33,22 @@ public class InpxImportService {
             scanStatusService.completeError("Ошибка при импорте: " + e.getMessage());
         }
     }
+
+    /**
+     * Асинхронный импорт INPX-каталога из указанной директории
+     * (файловая валидация и ошибки импорта доступны через /api/inpx/import/status)
+     */
+    @Async("scanTaskExecutor")
+    public void importCatalogFromDirAsync(String directoryPath, String fileName) {
+        try {
+            log.info("Запуск фонового сканирования INPX из директории: {}", directoryPath);
+            List<Book> books = inpxReaderService.readInpxFile(directoryPath, fileName);
+            bookService.saveAllBooks(books, directoryPath);
+            scanStatusService.completeSuccess("Импортировано книг: " + books.size());
+            log.info("Фоновое сканирование завершено: {} книг", books.size());
+        } catch (Exception e) {
+            log.error("Ошибка при фоновом сканировании: {}", e.getMessage(), e);
+            scanStatusService.completeError("Ошибка при импорте: " + e.getMessage());
+        }
+    }
 }
