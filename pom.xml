@@ -34,8 +34,8 @@
         <!-- Драйвер MariaDB (сервер БД — MariaDB). MySQL Connector/J 9.x потерял
              совместимость с MariaDB: падает на запросе метаданных
              "Unknown column 'RESERVED' in 'WHERE'" при старте Hibernate.
-             org.mariadb.jdbc.MySQLDriver принимает URL со схемой jdbc:mysql://,
-             так что продовая строка подключения не меняется -->
+             org.mariadb.jdbc.Driver принимает URL со схемой jdbc:mysql://
+             только с параметром permitMysqlScheme (см. application.yml) -->
         <dependency>
             <groupId>org.mariadb.jdbc</groupId>
             <artifactId>mariadb-java-client</artifactId>
