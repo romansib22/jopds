@@ -10,6 +10,6 @@ spring:
     show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.H2Dialect
+        # Диалект определяется автоматически (Hibernate 6)
   flyway:
     enabled: false
