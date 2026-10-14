@@ -6,11 +6,19 @@ server:
   port: ${SERVER_PORT:8080}
 
   # Конфигурация подключения к MySQL БД
-  datasource:    
-    url: ${DATASOURCE_URL:jdbc:mysql://localhost:3306/jopds?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true}    
+  datasource:
+    url: ${DATASOURCE_URL:jdbc:mysql://localhost:3306/jopds?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true}
     username: ${DATASOURCE_USERNAME:root}
     password: ${DATASOURCE_PASSWORD:root}
-  
+    # Пул соединений HikariCP (вместо DriverManagerDataSource без пула:
+    # раньше каждый запрос к БД открывал новое физическое соединение)
+    hikari:
+      pool-name: jopds-pool
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      max-lifetime: 1800000
+
   # Конфигурация JPA
   jpa:
     hibernate:
